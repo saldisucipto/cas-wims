@@ -16,7 +16,7 @@ class RfDeviceSeeder extends Seeder
             $number = str_pad((string) $index, 2, '0', STR_PAD_LEFT);
 
             RfDevice::query()->updateOrCreate(
-                ['code' => 'RF-OUT-' . $number],
+                ['code' => 'RF-' . $number],
                 ['status' => 'Available']
             );
         }

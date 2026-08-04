@@ -16,11 +16,11 @@ class PackingStationSeeder extends Seeder
             $number = str_pad((string) $index, 2, '0', STR_PAD_LEFT);
 
             PackingStation::query()->updateOrCreate(
-                ['code' => 'PACK-' . $number],
+                ['code' => 'STATION ' . $number],
                 [
                     'station_number' => $number,
                     'name' => 'Packing ' . $number,
-                    'qr_code' => 'QR-PACK-' . $number,
+                    'qr_code' => 'QR-STATION-' . $number,
                     'status' => 'Active',
                 ]
             );

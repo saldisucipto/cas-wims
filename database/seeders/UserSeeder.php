@@ -18,8 +18,8 @@ class UserSeeder extends Seeder
             [
                 'name' => 'Administrator',
                 'role' => 'Administrator',
-                'email' => 'admin@wims.local',
-                'password' => Hash::make('admin123'),
+                'email' => 'admin@wims.cas',
+                'password' => Hash::make('admin123CAS'),
             ]
         );
 
@@ -28,8 +28,8 @@ class UserSeeder extends Seeder
             [
                 'name' => 'Outbound Leader',
                 'role' => 'Leader',
-                'email' => 'leader@wims.local',
-                'password' => Hash::make('leader123'),
+                'email' => 'leader@wims.cas',
+                'password' => Hash::make('leader123CAS'),
             ]
         );
     }
