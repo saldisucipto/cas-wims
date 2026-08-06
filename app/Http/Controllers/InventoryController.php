@@ -5,7 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\Consumable;
 use App\Models\StockTransaction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class InventoryController extends Controller
 {
@@ -17,12 +21,26 @@ class InventoryController extends Controller
 
         return view('administration.inventory.receiving', [
             'consumables' => Consumable::query()->where('is_active', true)->orderBy('name')->get(),
-            'latestTransactions' => StockTransaction::query()
+            'latestReceivings' => StockTransaction::query()
                 ->with('consumable')
                 ->where('transaction_type', 'Receiving')
                 ->latest('transaction_at')
+                ->take(50)
+                ->get()
+                ->groupBy(fn (StockTransaction $transaction): string => $transaction->transaction_group ?: 'legacy-'.$transaction->id)
                 ->take(10)
-                ->get(),
+                ->map(function ($items) {
+                    $firstItem = $items->first();
+
+                    return [
+                        'transaction_at' => $firstItem->transaction_at,
+                        'purchase_request_number' => $firstItem->purchase_request_number,
+                        'received_by_name' => $firstItem->received_by_name,
+                        'notes' => $firstItem->notes,
+                        'items' => $items,
+                    ];
+                })
+                ->values(),
         ]);
     }
 
@@ -32,30 +50,67 @@ class InventoryController extends Controller
             return $redirect;
         }
 
-        $data = $request->validate([
-            'consumable_id' => ['required', 'exists:consumables,id'],
-            'quantity' => ['required', 'integer', 'min:1'],
-            'notes' => ['nullable', 'string'],
-        ]);
+        $data = validator(
+            $request->all(),
+            [
+                'transaction_date' => ['required', 'date'],
+                'purchase_request_number' => ['required', 'string', 'max:255'],
+                'received_by_name' => ['required', 'string', 'max:255'],
+                'notes' => ['nullable', 'string'],
+                'items' => ['required', 'array', 'min:1'],
+                'items.*.consumable_id' => ['nullable', 'exists:consumables,id'],
+                'items.*.sku_barcode' => ['nullable', 'string', 'max:255'],
+                'items.*.quantity' => ['required', 'integer', 'min:1'],
+            ]
+        )->after(function ($validator) use ($request): void {
+            foreach ($request->input('items', []) as $index => $item) {
+                $consumableId = $item['consumable_id'] ?? null;
+                $skuBarcode = trim((string) ($item['sku_barcode'] ?? ''));
 
-        $consumable = Consumable::query()->findOrFail($data['consumable_id']);
-        $before = $consumable->stock;
-        $after = $before + (int) $data['quantity'];
+                if (($consumableId === null || $consumableId === '') && $skuBarcode === '') {
+                    $validator->errors()->add("items.{$index}.sku_barcode", 'Select a consumable or scan a SKU barcode first.');
+                }
+            }
+        })->validate();
 
-        $consumable->update(['stock' => $after]);
+        $transactionGroup = (string) Str::uuid();
+        $transactionAt = Carbon::parse($data['transaction_date'])->startOfDay();
 
-        StockTransaction::create([
-            'consumable_id' => $consumable->id,
-            'transaction_type' => 'Receiving',
-            'quantity_before' => $before,
-            'quantity_change' => (int) $data['quantity'],
-            'quantity_after' => $after,
-            'notes' => $data['notes'] ?? null,
-            'performed_by' => Auth::id(),
-            'transaction_at' => now(),
-        ]);
+        DB::transaction(function () use ($data, $transactionAt, $transactionGroup): void {
+            foreach ($data['items'] as $index => $item) {
+                $consumable = $this->resolveReceivingConsumable(
+                    isset($item['consumable_id']) ? (string) $item['consumable_id'] : null,
+                    trim((string) ($item['sku_barcode'] ?? ''))
+                );
 
-        return back()->with('success', 'Receiving posted.');
+                if (! $consumable) {
+                    throw ValidationException::withMessages([
+                        "items.{$index}.sku_barcode" => 'Consumable with the selected item or scanned SKU barcode was not found.',
+                    ]);
+                }
+
+                $before = $consumable->stock;
+                $after = $before + (int) $item['quantity'];
+
+                $consumable->update(['stock' => $after]);
+
+                StockTransaction::create([
+                    'consumable_id' => $consumable->id,
+                    'transaction_type' => 'Receiving',
+                    'transaction_group' => $transactionGroup,
+                    'purchase_request_number' => $data['purchase_request_number'],
+                    'received_by_name' => $data['received_by_name'],
+                    'quantity_before' => $before,
+                    'quantity_change' => (int) $item['quantity'],
+                    'quantity_after' => $after,
+                    'notes' => $data['notes'] ?? null,
+                    'performed_by' => Auth::id(),
+                    'transaction_at' => $transactionAt,
+                ]);
+            }
+        });
+
+        return back()->with('success', 'Receiving transaction posted.');
     }
 
     public function adjustment(Request $request)
@@ -167,8 +222,12 @@ class InventoryController extends Controller
         $query = StockTransaction::query()->with(['consumable', 'performer'])->latest('transaction_at');
 
         if ($request->filled('q')) {
-            $query->whereHas('consumable', function ($builder) use ($request) {
-                $builder->where('name', 'like', '%' . $request->string('q') . '%');
+            $query->where(function ($builder) use ($request) {
+                $builder->where('purchase_request_number', 'like', '%'.$request->string('q').'%')
+                    ->orWhere('received_by_name', 'like', '%'.$request->string('q').'%')
+                    ->orWhereHas('consumable', function ($consumableBuilder) use ($request) {
+                        $consumableBuilder->where('name', 'like', '%'.$request->string('q').'%');
+                    });
             });
         }
 
@@ -189,5 +248,21 @@ class InventoryController extends Controller
         }
 
         return null;
+    }
+
+    private function resolveReceivingConsumable(?string $consumableId, string $scannedCode): ?Consumable
+    {
+        if ($consumableId !== null && $consumableId !== '') {
+            return Consumable::query()->find($consumableId);
+        }
+
+        if ($scannedCode === '') {
+            return null;
+        }
+
+        return Consumable::query()
+            ->where('sku_barcode', $scannedCode)
+            ->orWhere('sku', $scannedCode)
+            ->first();
     }
 }

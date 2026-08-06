@@ -19,6 +19,16 @@
                     {{ session('success') }}</p>
             @endif
 
+            @if ($errors->any())
+                <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    <ul class="list-disc pl-5">
+                        @foreach ($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             <form action="{{ route('administration.master.consumables') }}" method="GET"
                 class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-4">
                 <input name="q" value="{{ $filters['q'] ?? '' }}" placeholder="Search consumable..."
@@ -33,26 +43,55 @@
             </form>
 
             <form action="{{ route('administration.master.consumables.store') }}" method="POST"
-                class="mt-6 grid grid-cols-1 gap-3 md:grid-cols-5">
+                class="mt-6 grid grid-cols-1 gap-3 md:grid-cols-6">
                 @csrf
+                <input name="sku" value="{{ old('sku') }}" placeholder="SKU"
+                    class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                <input name="sku_barcode" value="{{ old('sku_barcode') }}" placeholder="SKU Barcode"
+                    class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                 <input name="name" placeholder="Name" required
-                    class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    class="rounded-lg border border-slate-300 px-3 py-2 text-sm" value="{{ old('name') }}">
                 <input name="unit" placeholder="Unit" required
-                    class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    class="rounded-lg border border-slate-300 px-3 py-2 text-sm" value="{{ old('unit') }}">
                 <input name="stock" type="number" min="0" placeholder="Stock" required
-                    class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    class="rounded-lg border border-slate-300 px-3 py-2 text-sm" value="{{ old('stock') }}">
                 <select name="status" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                    <option value="Active">Aktif</option>
-                    <option value="Inactive">Tidak Aktif</option>
+                    <option value="Active" @selected(old('status', 'Active') === 'Active')>Aktif</option>
+                    <option value="Inactive" @selected(old('status') === 'Inactive')>Tidak Aktif</option>
                 </select>
                 <button type="submit"
-                    class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Add</button>
+                    class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white md:col-span-6">Add</button>
             </form>
+
+            <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                        <h2 class="text-sm font-semibold text-slate-900">Import Excel Consumables</h2>
+                        <p class="mt-1 text-sm text-slate-600">Gunakan template resmi agar urutan kolom sesuai database.</p>
+                        <p class="mt-1 text-xs text-slate-500">Header wajib: {{ implode(', ', $importHeaders) }}</p>
+                    </div>
+                    <a href="{{ route('administration.master.consumables.template') }}"
+                        class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white">Download
+                        Template</a>
+                </div>
+
+                <form action="{{ route('administration.master.consumables.import') }}" method="POST"
+                    enctype="multipart/form-data" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                    @csrf
+                    <input type="file" name="file" accept=".xlsx,.csv" required
+                        class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white">
+                    <button type="submit"
+                        class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Import
+                        Data</button>
+                </form>
+            </div>
 
             <div class="mt-6 overflow-x-auto">
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 text-slate-600">
                         <tr>
+                            <th class="px-3 py-2">SKU</th>
+                            <th class="px-3 py-2">SKU Barcode</th>
                             <th class="px-3 py-2">Name</th>
                             <th class="px-3 py-2">Unit</th>
                             <th class="px-3 py-2">Stock</th>
@@ -63,6 +102,8 @@
                     <tbody class="divide-y divide-slate-200">
                         @foreach ($rows as $row)
                             <tr>
+                                <td class="px-3 py-2">{{ $row->sku ?: '-' }}</td>
+                                <td class="px-3 py-2">{{ $row->sku_barcode ?: '-' }}</td>
                                 <td class="px-3 py-2">{{ $row->name }}</td>
                                 <td class="px-3 py-2">{{ $row->unit }}</td>
                                 <td class="px-3 py-2">{{ $row->stock }}</td>
@@ -71,24 +112,30 @@
                                     <details>
                                         <summary class="cursor-pointer text-blue-700">Edit</summary>
                                         <form action="{{ route('administration.master.consumables.update', $row) }}"
-                                            method="POST" class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-4">
+                                            method="POST" class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-6">
                                             @csrf
+                                            <input name="sku" value="{{ $row->sku }}"
+                                                class="rounded border border-slate-300 px-2 py-1">
+                                            <input name="sku_barcode" value="{{ $row->sku_barcode }}"
+                                                class="rounded border border-slate-300 px-2 py-1">
                                             <input name="name" value="{{ $row->name }}"
                                                 class="rounded border border-slate-300 px-2 py-1">
                                             <input name="unit" value="{{ $row->unit }}"
                                                 class="rounded border border-slate-300 px-2 py-1">
-                                            <input name="stock" type="number" min="0" value="{{ $row->stock }}"
+                                            <input name="stock" type="number" min="0"
+                                                value="{{ $row->stock }}"
                                                 class="rounded border border-slate-300 px-2 py-1">
                                             <select name="status" class="rounded border border-slate-300 px-2 py-1">
                                                 <option value="Active" @selected($row->is_active)>Active</option>
                                                 <option value="Inactive" @selected(!$row->is_active)>Inactive</option>
                                             </select>
                                             <button type="submit"
-                                                class="rounded bg-blue-700 px-2 py-1 text-white md:col-span-4">Save</button>
+                                                class="rounded bg-blue-700 px-2 py-1 text-white md:col-span-6">Save</button>
                                         </form>
                                     </details>
                                     <form action="{{ route('administration.master.consumables.delete', $row) }}"
-                                        method="POST" class="mt-2" onsubmit="return confirm('Delete this consumable?');">
+                                        method="POST" class="mt-2"
+                                        onsubmit="return confirm('Delete this consumable?');">
                                         @csrf
                                         <button type="submit" class="text-xs font-semibold text-red-700">Delete</button>
                                     </form>

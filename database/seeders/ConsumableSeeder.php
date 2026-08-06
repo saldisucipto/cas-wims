@@ -16,9 +16,9 @@ class ConsumableSeeder extends Seeder
             ['name' => 'Bubble Wrap', 'unit' => 'Roll', 'stock' => 0],
             ['name' => 'Lakban Bening', 'unit' => 'Roll', 'stock' => 0],
             ['name' => 'Lakban Fragile', 'unit' => 'Roll', 'stock' => 0],
-            ['name' => 'Poly Mailer', 'unit' => 'Pack', 'stock' => 160],
-            ['name' => 'Poly Mailer', 'unit' => 'Pack', 'stock' => 160],
-            ['name' => 'Poly Mailer', 'unit' => 'Pack', 'stock' => 160],
+            ['name' => 'Poly Mailer 30 x 40 CM', 'unit' => 'Pack', 'stock' => 0],
+            ['name' => 'Poly Mailer 20 X 30 CM', 'unit' => 'Pack', 'stock' => 0],
+            ['name' => 'Poly Mailer 50 X 60 CM', 'unit' => 'Pack', 'stock' => 0],
         ];
 
         foreach ($items as $item) {

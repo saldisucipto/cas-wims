@@ -19,6 +19,17 @@
                     {{ session('success') }}</p>
             @endif
 
+            @if ($errors->any())
+                <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    <p class="font-semibold">Import gagal.</p>
+                    <ul class="mt-2 list-disc pl-5">
+                        @foreach ($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             <form action="{{ route('administration.master.wms-accounts') }}" method="GET"
                 class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-4">
                 <input name="q" value="{{ $filters['q'] ?? '' }}" placeholder="Search username..."
@@ -48,6 +59,29 @@
                 </select>
                 <button class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Add</button>
             </form>
+
+            <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                        <h2 class="text-sm font-semibold text-slate-900">Import Excel WMS Account</h2>
+                        <p class="mt-1 text-sm text-slate-600">Gunakan template resmi agar urutan kolom sesuai database.</p>
+                        <p class="mt-1 text-xs text-slate-500">Header wajib: {{ implode(', ', $importHeaders) }}</p>
+                    </div>
+                    <a href="{{ route('administration.master.wms-accounts.template') }}"
+                        class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white">Download
+                        Template</a>
+                </div>
+
+                <form action="{{ route('administration.master.wms-accounts.import') }}" method="POST"
+                    enctype="multipart/form-data" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                    @csrf
+                    <input type="file" name="file" accept=".xlsx,.csv" required
+                        class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white">
+                    <button type="submit"
+                        class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Import
+                        Data</button>
+                </form>
+            </div>
 
             <div class="mt-6 overflow-x-auto">
                 <table class="min-w-full text-left text-sm">

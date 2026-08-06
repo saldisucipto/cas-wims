@@ -9,8 +9,8 @@ use App\Http\Controllers\MasterDataController;
 use App\Http\Controllers\PackingController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RfController;
-use App\Http\Controllers\SystemUserController;
 use App\Http\Controllers\SystemConfigController;
+use App\Http\Controllers\SystemUserController;
 use App\Http\Controllers\WelcomeDashboardController;
 use Illuminate\Support\Facades\Route;
 
@@ -38,6 +38,8 @@ Route::post('/leader-consumable-requests/{consumableRequest}/validate', [LeaderP
 Route::post('/leader-consumable-requests/{consumableRequest}/reject', [LeaderPanelController::class, 'rejectRequest'])->name('leader.requests.reject');
 
 Route::get('/administration/master-data/consumables', [MasterDataController::class, 'consumables'])->name('administration.master.consumables');
+Route::get('/administration/master-data/consumables/template', [MasterDataController::class, 'downloadConsumableTemplate'])->name('administration.master.consumables.template');
+Route::post('/administration/master-data/consumables/import', [MasterDataController::class, 'importConsumables'])->name('administration.master.consumables.import');
 Route::post('/administration/master-data/consumables', [MasterDataController::class, 'storeConsumable'])->name('administration.master.consumables.store');
 Route::post('/administration/master-data/consumables/{consumable}', [MasterDataController::class, 'updateConsumable'])->name('administration.master.consumables.update');
 Route::post('/administration/master-data/consumables/{consumable}/delete', [MasterDataController::class, 'destroyConsumable'])->name('administration.master.consumables.delete');
@@ -53,11 +55,15 @@ Route::post('/administration/master-data/packing-stations/{packingStation}', [Ma
 Route::post('/administration/master-data/packing-stations/{packingStation}/delete', [MasterDataController::class, 'destroyPackingStation'])->name('administration.master.packing-stations.delete');
 
 Route::get('/administration/master-data/daily-workers', [MasterDataController::class, 'dailyWorkers'])->name('administration.master.daily-workers');
+Route::get('/administration/master-data/daily-workers/template', [MasterDataController::class, 'downloadDailyWorkerTemplate'])->name('administration.master.daily-workers.template');
+Route::post('/administration/master-data/daily-workers/import', [MasterDataController::class, 'importDailyWorkers'])->name('administration.master.daily-workers.import');
 Route::post('/administration/master-data/daily-workers', [MasterDataController::class, 'storeDailyWorker'])->name('administration.master.daily-workers.store');
 Route::post('/administration/master-data/daily-workers/{dailyWorker}', [MasterDataController::class, 'updateDailyWorker'])->name('administration.master.daily-workers.update');
 Route::post('/administration/master-data/daily-workers/{dailyWorker}/delete', [MasterDataController::class, 'destroyDailyWorker'])->name('administration.master.daily-workers.delete');
 
 Route::get('/administration/master-data/wms-accounts', [MasterDataController::class, 'wmsAccounts'])->name('administration.master.wms-accounts');
+Route::get('/administration/master-data/wms-accounts/template', [MasterDataController::class, 'downloadWmsAccountTemplate'])->name('administration.master.wms-accounts.template');
+Route::post('/administration/master-data/wms-accounts/import', [MasterDataController::class, 'importWmsAccounts'])->name('administration.master.wms-accounts.import');
 Route::post('/administration/master-data/wms-accounts', [MasterDataController::class, 'storeWmsAccount'])->name('administration.master.wms-accounts.store');
 Route::post('/administration/master-data/wms-accounts/{wmsAccount}', [MasterDataController::class, 'updateWmsAccount'])->name('administration.master.wms-accounts.update');
 Route::post('/administration/master-data/wms-accounts/{wmsAccount}/delete', [MasterDataController::class, 'destroyWmsAccount'])->name('administration.master.wms-accounts.delete');

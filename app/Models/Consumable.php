@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 class Consumable extends Model
 {
     protected $fillable = [
+        'sku',
+        'sku_barcode',
         'name',
         'stock',
         'unit',

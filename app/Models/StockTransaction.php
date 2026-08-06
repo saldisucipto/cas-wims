@@ -9,6 +9,9 @@ class StockTransaction extends Model
     protected $fillable = [
         'consumable_id',
         'transaction_type',
+        'transaction_group',
+        'purchase_request_number',
+        'received_by_name',
         'quantity_before',
         'quantity_change',
         'quantity_after',

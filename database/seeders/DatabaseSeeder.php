@@ -20,8 +20,8 @@ class DatabaseSeeder extends Seeder
             PackingStationSeeder::class,
             RfDeviceSeeder::class,
             ConsumableSeeder::class,
-            WmsAccountSeeder::class,
-            WorkingSessionSeeder::class,
+            // WmsAccountSeeder::class,
+            // WorkingSessionSeeder::class,
         ]);
     }
 }
