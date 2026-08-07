@@ -8,42 +8,42 @@ use Illuminate\Database\Seeder;
 class DailyWorkerSeeder extends Seeder
 {
     /**
-     * Run the database seeds.
+     * Run the database see ds.
      */
     public function run(): void
     {
-        // $firstNames = [
-        //     'Andi', 'Budi', 'Rizky', 'Dimas', 'Yusuf', 'Fajar', 'Agus', 'Rendi', 'Rudi', 'Rahmat',
-        // ];
+        $firstNames = [
+            'Andi', 'Budi', 'Rizky', 'Dimas', 'Yusuf', 'Fajar', 'Agus', 'Rendi', 'Rudi', 'Rahmat',
+        ];
 
-        // $lastNames = [
-        //     'Pratama', 'Santoso', 'Maulana', 'Nugraha', 'Saputra', 'Firmansyah', 'Wijaya', 'Kurniawan', 'Setiawan', 'Hidayat',
-        // ];
+        $lastNames = [
+            'Pratama', 'Santoso', 'Maulana', 'Nugraha', 'Saputra', 'Firmansyah', 'Wijaya', 'Kurniawan', 'Setiawan', 'Hidayat',
+        ];
 
-        // $workers = [];
+        $workers = [];
 
-        // $counter = 1;
+        $counter = 1;
 
-        // foreach ($firstNames as $firstName) {
-        //     foreach ($lastNames as $lastName) {
-        //         $employeeCode = 'DW' . str_pad((string) $counter, 4, '0', STR_PAD_LEFT);
+        foreach ($firstNames as $firstName) {
+            foreach ($lastNames as $lastName) {
+                $employeeCode = 'DW' . str_pad((string) $counter, 4, '0', STR_PAD_LEFT);
 
-        //         $workers[] = [
-        //             'employee_code' => $employeeCode,
-        //             'name' => $firstName . ' ' . $lastName,
-        //             'function' => 'Outbound',
-        //             'division' => 'Packer',
-        //             'position' => 'Packer',
-        //             'status' => 'Active',
-        //             'is_active' => true,
-        //             'created_at' => now(),
-        //             'updated_at' => now(),
-        //         ];
+                $workers[] = [
+                    'employee_code' => $employeeCode,
+                    'name' => $firstName . ' ' . $lastName,
+                    'function' => 'Outbound',
+                    'division' => 'Packer',
+                    'position' => 'Packer',
+                    'status' => 'Active',
+                    'is_active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
 
-        //         $counter++;
-        //     }
-        // }
+                $counter++;
+            }
+        }
 
-        // DailyWorker::query()->upsert(array_slice($workers, 0, 50), ['name'], ['updated_at']);
+        DailyWorker::query()->upsert(array_slice($workers, 0, 50), ['name'], ['updated_at']);
     }
 }
