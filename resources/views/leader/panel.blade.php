@@ -20,13 +20,23 @@
                     <p class="mt-2 text-slate-600">Monitor Daily Workers and Validate Consumable Requests.</p>
                 </div>
 
-                <form action="{{ route('leader.logout') }}" method="POST">
-                    @csrf
-                    <button type="submit"
-                        class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
-                        Logout
-                    </button>
-                </form>
+                <div class="flex flex-wrap gap-2">
+                    <a href="{{ route('atk.take') }}"
+                        class="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100">
+                        Ambil ATK
+                    </a>
+                    <a href="{{ route('atk.requests') }}"
+                        class="inline-flex items-center justify-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-800">
+                        Permintaan ATK
+                    </a>
+                    <form action="{{ route('leader.logout') }}" method="POST">
+                        @csrf
+                        <button type="submit"
+                            class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
+                            Logout
+                        </button>
+                    </form>
+                </div>
             </div>
         </header>
 

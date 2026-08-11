@@ -97,6 +97,10 @@
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.inventory.receiving' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.inventory.receiving' ? 'true' : 'false' }}">Consumable
                                     Receiving</a></li>
+                            <li><a href="{{ route('administration.inventory.atk-receiving') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.inventory.atk-receiving' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.inventory.atk-receiving' ? 'true' : 'false' }}">Penerimaan
+                                    ATK</a></li>
                             <li><a href="{{ route('administration.inventory.adjustment') }}"
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.inventory.adjustment' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.inventory.adjustment' ? 'true' : 'false' }}">Stock
@@ -130,6 +134,11 @@
                         </button>
 
                         <ul id="master-data-list" class="sidebar-group-list ml-4 mt-1 space-y-1 hidden">
+                            <li><a href="{{ route('administration.master.atk') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.atk' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.master.atk' ? 'true' : 'false' }}">Master
+                                    ATK</a>
+                            </li>
                             <li><a href="{{ route('administration.master.consumables') }}"
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.consumables' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.master.consumables' ? 'true' : 'false' }}">Consumables</a>
@@ -157,6 +166,36 @@
                         </ul>
                     </div>
 
+                    <div class="sidebar-group" data-group="transactions">
+                        <button type="button"
+                            class="sidebar-group-toggle flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
+                            data-target="transactions-list">
+                            <span class="flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                    stroke-width="1.5" stroke="currentColor" class="h-5 w-5">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M8.25 6.75h12m-12 5.25h12m-12 5.25h12M3.75 6.75h.008v.008H3.75V6.75Zm0 5.25h.008v.008H3.75V12Zm0 5.25h.008v.008H3.75v-.008Z" />
+                                </svg>
+                                Transactions
+                            </span>
+                            <svg class="sidebar-chevron h-4 w-4 transition-transform" xmlns="http://www.w3.org/2000/svg"
+                                fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                            </svg>
+                        </button>
+
+                        <ul id="transactions-list" class="sidebar-group-list ml-4 mt-1 space-y-1 hidden">
+                            <li><a href="{{ route('atk.take') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'atk.take' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'atk.take' ? 'true' : 'false' }}">Pengambilan
+                                    ATK</a></li>
+                            <li><a href="{{ route('atk.requests') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'atk.requests' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'atk.requests' ? 'true' : 'false' }}">Permintaan
+                                    ATK</a></li>
+                        </ul>
+                    </div>
+
                     <div class="sidebar-group" data-group="reports">
                         <button type="button"
                             class="sidebar-group-toggle flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
@@ -180,6 +219,10 @@
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.reports.working-sessions' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.reports.working-sessions' ? 'true' : 'false' }}">Working
                                     Session Report</a></li>
+                            <li><a href="{{ route('administration.reports.atk-stock-card') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.reports.atk-stock-card' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.reports.atk-stock-card' ? 'true' : 'false' }}">Kartu
+                                    Stok ATK</a></li>
                             <li><a href="{{ route('administration.reports.consumable-usage') }}"
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.reports.consumable-usage' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.reports.consumable-usage' ? 'true' : 'false' }}">Consumable
@@ -236,6 +279,11 @@
             </aside>
 
             <div class="space-y-6">
+                @if (session('success'))
+                    <p class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                        {{ session('success') }}</p>
+                @endif
+
                 <section>
                     <h2 class="mb-3 text-lg font-semibold text-slate-900">Quick Summary</h2>
                     <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -291,12 +339,160 @@
                             <p class="mt-4 text-3xl font-bold text-slate-900">{{ $systemUserCount }}</p>
                             <p class="mt-1 text-xs text-slate-500">Leader and admin accounts</p>
                         </article>
+
+                        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                            <div class="flex items-center justify-between">
+                                <p class="text-sm font-medium text-slate-600">Total Master ATK</p>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                    stroke-width="1.5" stroke="currentColor" class="h-6 w-6 text-blue-700">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M7.5 6.75h9m-9 5.25h9m-9 5.25h5.25M5.25 3h13.5A2.25 2.25 0 0 1 21 5.25v13.5A2.25 2.25 0 0 1 18.75 21H5.25A2.25 2.25 0 0 1 3 18.75V5.25A2.25 2.25 0 0 1 5.25 3Z" />
+                                </svg>
+                            </div>
+                            <p class="mt-4 text-3xl font-bold text-slate-900">{{ $atkItemCount }}</p>
+                            <p class="mt-1 text-xs text-slate-500">Master ATK catalog</p>
+                        </article>
+
+                        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                            <div class="flex items-center justify-between">
+                                <p class="text-sm font-medium text-slate-600">Total Stock ATK</p>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                    stroke-width="1.5" stroke="currentColor" class="h-6 w-6 text-blue-700">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M3 7.5 12 3l9 4.5M3 7.5V16.5L12 21m-9-13.5L12 12m9-4.5V16.5L12 21m0-9v9" />
+                                </svg>
+                            </div>
+                            <p class="mt-4 text-3xl font-bold text-slate-900">{{ $atkStockTotal }}</p>
+                            <p class="mt-1 text-xs text-slate-500">Total stok ATK tersedia</p>
+                        </article>
+
+                        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                            <div class="flex items-center justify-between">
+                                <p class="text-sm font-medium text-slate-600">Pending ATK Requests</p>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                    stroke-width="1.5" stroke="currentColor" class="h-6 w-6 text-blue-700">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M12 6v6l4 2m5-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                                </svg>
+                            </div>
+                            <p class="mt-4 text-3xl font-bold text-slate-900">{{ $pendingAtkRequestCount }}</p>
+                            <p class="mt-1 text-xs text-slate-500">Menunggu persetujuan admin</p>
+                        </article>
+
+                        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                            <div class="flex items-center justify-between">
+                                <p class="text-sm font-medium text-slate-600">Approved Today</p>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                    stroke-width="1.5" stroke="currentColor" class="h-6 w-6 text-blue-700">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                </svg>
+                            </div>
+                            <p class="mt-4 text-3xl font-bold text-slate-900">{{ $approvedAtkTodayCount }}</p>
+                            <p class="mt-1 text-xs text-slate-500">ATK requests approved today</p>
+                        </article>
+                    </div>
+                </section>
+
+                <section>
+                    <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 class="text-lg font-semibold text-slate-900">Pending ATK Approvals</h2>
+                            <p class="text-sm text-slate-600">Approve or reject ATK requests from Leaders and
+                                Administrators.</p>
+                        </div>
+                        <a href="{{ route('atk.requests') }}"
+                            class="inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open
+                            Request Page</a>
+                    </div>
+
+                    @if ($errors->has('atk_approval'))
+                        <p class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                            {{ $errors->first('atk_approval') }}</p>
+                    @endif
+
+                    <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                        @forelse ($pendingAtkRequests as $request)
+                            <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Request
+                                            Number</p>
+                                        <h3 class="mt-1 text-lg font-semibold text-slate-900">
+                                            {{ $request->request_number }}</h3>
+                                    </div>
+                                    <span
+                                        class="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">Pending</span>
+                                </div>
+
+                                <div class="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                                    <p><span class="text-slate-500">Request Date:</span> <span
+                                            class="font-semibold text-slate-900">{{ $request->requested_at?->format('d M Y H:i') ?? '-' }}</span>
+                                    </p>
+                                    <p><span class="text-slate-500">Requested By:</span> <span
+                                            class="font-semibold text-slate-900">{{ $request->requester?->name ?? '-' }}</span>
+                                    </p>
+                                    <p class="sm:col-span-2"><span class="text-slate-500">Notes:</span> <span
+                                            class="font-semibold text-slate-900">{{ $request->notes ?: '-' }}</span></p>
+                                </div>
+
+                                <div class="mt-4">
+                                    <p class="text-sm font-semibold text-slate-700">Requested Items</p>
+                                    <ul class="mt-2 space-y-1 text-sm text-slate-700">
+                                        @foreach ($request->items as $item)
+                                            <li class="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
+                                                <span>{{ $item->atkItem?->name ?? '-' }}</span>
+                                                <span class="font-semibold">Qty {{ $item->quantity }}</span>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                </div>
+
+                                <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    <form action="{{ route('administration.atk-requests.approve', $request) }}"
+                                        method="POST">
+                                        @csrf
+                                        <button type="submit"
+                                            class="inline-flex w-full items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700">Approve</button>
+                                    </form>
+
+                                    <form action="{{ route('administration.atk-requests.reject', $request) }}"
+                                        method="POST" class="space-y-2">
+                                        @csrf
+                                        <input name="rejection_notes" placeholder="Rejection notes" required
+                                            class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                                        <button type="submit"
+                                            class="inline-flex w-full items-center justify-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700">Reject</button>
+                                    </form>
+                                </div>
+                            </article>
+                        @empty
+                            <div
+                                class="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm shadow-slate-300/40 xl:col-span-2">
+                                No pending ATK requests.
+                            </div>
+                        @endforelse
                     </div>
                 </section>
 
                 <section>
                     <h2 class="mb-3 text-lg font-semibold text-slate-900">Master Data</h2>
                     <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <article
+                            class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40 xl:col-span-1">
+                            <div class="flex items-start justify-between">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                    stroke-width="1.5" stroke="currentColor" class="h-7 w-7 text-blue-700">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M7.5 6.75h9m-9 5.25h9m-9 5.25h5.25M5.25 3h13.5A2.25 2.25 0 0 1 21 5.25v13.5A2.25 2.25 0 0 1 18.75 21H5.25A2.25 2.25 0 0 1 3 18.75V5.25A2.25 2.25 0 0 1 5.25 3Z" />
+                                </svg>
+                            </div>
+                            <h3 class="mt-4 text-base font-semibold text-slate-900">Master ATK</h3>
+                            <p class="mt-1 text-sm text-slate-600">Manage office supplies data separately from consumables.
+                            </p>
+                            <a href="{{ route('administration.master.atk') }}"
+                                class="mt-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open</a>
+                        </article>
+
                         <article
                             class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40 xl:col-span-1">
                             <div class="flex items-start justify-between">
@@ -389,6 +585,17 @@
                                 stroke-width="1.5" stroke="currentColor" class="h-7 w-7 text-blue-700">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                             </svg>
+                            <h3 class="mt-4 text-base font-semibold text-slate-900">Penerimaan ATK</h3>
+                            <p class="mt-1 text-sm text-slate-600">Receive new office supply stock.</p>
+                            <a href="{{ route('administration.inventory.atk-receiving') }}"
+                                class="mt-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open</a>
+                        </article>
+
+                        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                stroke-width="1.5" stroke="currentColor" class="h-7 w-7 text-blue-700">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                            </svg>
                             <h3 class="mt-4 text-base font-semibold text-slate-900">Consumable Receiving</h3>
                             <p class="mt-1 text-sm text-slate-600">Receive new consumable stock.</p>
                             <a href="{{ route('administration.inventory.receiving') }}"
@@ -434,11 +641,36 @@
                 </section>
 
                 <section>
+                    <h2 class="mb-3 text-lg font-semibold text-slate-900">Transactions</h2>
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                            <h3 class="text-base font-semibold text-slate-900">Pengambilan ATK</h3>
+                            <p class="mt-1 text-sm text-slate-600">Take ATK directly and auto-record who takes each item.
+                            </p>
+                            <a href="{{ route('atk.take') }}"
+                                class="mt-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open</a>
+                        </article>
+
+                        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                            <h3 class="text-base font-semibold text-slate-900">Permintaan ATK</h3>
+                            <p class="mt-1 text-sm text-slate-600">Create ATK requests and monitor own request history.</p>
+                            <a href="{{ route('atk.requests') }}"
+                                class="mt-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open</a>
+                        </article>
+                    </div>
+                </section>
+
+                <section>
                     <h2 class="mb-3 text-lg font-semibold text-slate-900">Reports</h2>
                     <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                         <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
                             <h3 class="text-base font-semibold text-slate-900">Working Session Report</h3><a
                                 href="{{ route('administration.reports.working-sessions') }}"
+                                class="mt-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open</a>
+                        </article>
+                        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                            <h3 class="text-base font-semibold text-slate-900">Kartu Stok ATK</h3><a
+                                href="{{ route('administration.reports.atk-stock-card') }}"
                                 class="mt-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open</a>
                         </article>
                         <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">

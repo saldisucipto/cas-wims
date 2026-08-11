@@ -40,6 +40,21 @@ class User extends Authenticatable
         return $this->hasMany(ConsumableRequest::class, 'rejected_by');
     }
 
+    public function atkRequests()
+    {
+        return $this->hasMany(AtkRequest::class, 'requested_by');
+    }
+
+    public function approvedAtkRequests()
+    {
+        return $this->hasMany(AtkRequest::class, 'approved_by');
+    }
+
+    public function rejectedAtkRequests()
+    {
+        return $this->hasMany(AtkRequest::class, 'rejected_by');
+    }
+
     public function forceClosedWorkingSessions()
     {
         return $this->hasMany(WorkingSession::class, 'force_closed_by');

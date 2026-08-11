@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AdministrationAuthController;
 use App\Http\Controllers\AdministrationDashboardController;
+use App\Http\Controllers\AtkController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\LeaderAuthController;
 use App\Http\Controllers\LeaderPanelController;
@@ -36,6 +37,10 @@ Route::post('/leader-logout', [LeaderAuthController::class, 'destroy'])->name('l
 Route::get('/leader-panel', [LeaderPanelController::class, 'index'])->name('leader.panel');
 Route::post('/leader-consumable-requests/{consumableRequest}/validate', [LeaderPanelController::class, 'validateRequest'])->name('leader.requests.validate');
 Route::post('/leader-consumable-requests/{consumableRequest}/reject', [LeaderPanelController::class, 'rejectRequest'])->name('leader.requests.reject');
+Route::get('/atk/requests', [AtkController::class, 'requests'])->name('atk.requests');
+Route::post('/atk/requests', [AtkController::class, 'storeRequest'])->name('atk.requests.store');
+Route::get('/atk/take', [AtkController::class, 'take'])->name('atk.take');
+Route::post('/atk/take', [AtkController::class, 'storeTake'])->name('atk.take.store');
 
 Route::get('/administration/master-data/consumables', [MasterDataController::class, 'consumables'])->name('administration.master.consumables');
 Route::get('/administration/master-data/consumables/template', [MasterDataController::class, 'downloadConsumableTemplate'])->name('administration.master.consumables.template');
@@ -43,6 +48,10 @@ Route::post('/administration/master-data/consumables/import', [MasterDataControl
 Route::post('/administration/master-data/consumables', [MasterDataController::class, 'storeConsumable'])->name('administration.master.consumables.store');
 Route::post('/administration/master-data/consumables/{consumable}', [MasterDataController::class, 'updateConsumable'])->name('administration.master.consumables.update');
 Route::post('/administration/master-data/consumables/{consumable}/delete', [MasterDataController::class, 'destroyConsumable'])->name('administration.master.consumables.delete');
+Route::get('/administration/master-data/atk', [AtkController::class, 'master'])->name('administration.master.atk');
+Route::post('/administration/master-data/atk', [AtkController::class, 'storeMaster'])->name('administration.master.atk.store');
+Route::post('/administration/master-data/atk/{atkItem}', [AtkController::class, 'updateMaster'])->name('administration.master.atk.update');
+Route::post('/administration/master-data/atk/{atkItem}/delete', [AtkController::class, 'destroyMaster'])->name('administration.master.atk.delete');
 
 Route::get('/administration/master-data/rf-devices', [MasterDataController::class, 'rfDevices'])->name('administration.master.rf-devices');
 Route::post('/administration/master-data/rf-devices', [MasterDataController::class, 'storeRfDevice'])->name('administration.master.rf-devices.store');
@@ -75,6 +84,8 @@ Route::post('/administration/master-data/system-users/{user}/delete', [SystemUse
 
 Route::get('/administration/inventory/receiving', [InventoryController::class, 'receiving'])->name('administration.inventory.receiving');
 Route::post('/administration/inventory/receiving', [InventoryController::class, 'storeReceiving'])->name('administration.inventory.receiving.store');
+Route::get('/administration/inventory/atk-receiving', [AtkController::class, 'receiving'])->name('administration.inventory.atk-receiving');
+Route::post('/administration/inventory/atk-receiving', [AtkController::class, 'storeReceiving'])->name('administration.inventory.atk-receiving.store');
 Route::get('/administration/inventory/adjustment', [InventoryController::class, 'adjustment'])->name('administration.inventory.adjustment');
 Route::post('/administration/inventory/adjustment', [InventoryController::class, 'storeAdjustment'])->name('administration.inventory.adjustment.store');
 Route::get('/administration/inventory/opname', [InventoryController::class, 'opname'])->name('administration.inventory.opname');
@@ -85,8 +96,11 @@ Route::get('/administration/reports/working-sessions', [ReportController::class,
 Route::post('/administration/reports/working-sessions/{workingSession}/force-close', [ReportController::class, 'forceCloseWorkingSession'])->name('administration.reports.working-sessions.force-close');
 Route::get('/administration/reports/consumable-usage', [ReportController::class, 'consumableUsage'])->name('administration.reports.consumable-usage');
 Route::get('/administration/reports/inventory', [ReportController::class, 'inventory'])->name('administration.reports.inventory');
+Route::get('/administration/reports/atk-stock-card', [AtkController::class, 'stockCard'])->name('administration.reports.atk-stock-card');
 Route::get('/administration/reports/rf-device-usage', [ReportController::class, 'rfDeviceUsage'])->name('administration.reports.rf-device-usage');
 Route::get('/administration/reports/daily-worker-activity', [ReportController::class, 'dailyWorkerActivity'])->name('administration.reports.daily-worker-activity');
+Route::post('/administration/atk-requests/{atkRequest}/approve', [AtkController::class, 'approveRequest'])->name('administration.atk-requests.approve');
+Route::post('/administration/atk-requests/{atkRequest}/reject', [AtkController::class, 'rejectRequest'])->name('administration.atk-requests.reject');
 
 Route::get('/administration/system/warehouse-settings', [SystemConfigController::class, 'warehouseSettings'])->name('administration.system.warehouse-settings');
 Route::post('/administration/system/warehouse-settings', [SystemConfigController::class, 'saveWarehouseSettings'])->name('administration.system.warehouse-settings.save');
