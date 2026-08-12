@@ -49,6 +49,8 @@ Route::post('/administration/master-data/consumables', [MasterDataController::cl
 Route::post('/administration/master-data/consumables/{consumable}', [MasterDataController::class, 'updateConsumable'])->name('administration.master.consumables.update');
 Route::post('/administration/master-data/consumables/{consumable}/delete', [MasterDataController::class, 'destroyConsumable'])->name('administration.master.consumables.delete');
 Route::get('/administration/master-data/atk', [AtkController::class, 'master'])->name('administration.master.atk');
+Route::get('/administration/master-data/atk/template', [AtkController::class, 'downloadAtkTemplate'])->name('administration.master.atk.template');
+Route::post('/administration/master-data/atk/import', [AtkController::class, 'importAtk'])->name('administration.master.atk.import');
 Route::post('/administration/master-data/atk', [AtkController::class, 'storeMaster'])->name('administration.master.atk.store');
 Route::post('/administration/master-data/atk/{atkItem}', [AtkController::class, 'updateMaster'])->name('administration.master.atk.update');
 Route::post('/administration/master-data/atk/{atkItem}/delete', [AtkController::class, 'destroyMaster'])->name('administration.master.atk.delete');
@@ -97,6 +99,7 @@ Route::post('/administration/reports/working-sessions/{workingSession}/force-clo
 Route::get('/administration/reports/consumable-usage', [ReportController::class, 'consumableUsage'])->name('administration.reports.consumable-usage');
 Route::get('/administration/reports/inventory', [ReportController::class, 'inventory'])->name('administration.reports.inventory');
 Route::get('/administration/reports/atk-stock-card', [AtkController::class, 'stockCard'])->name('administration.reports.atk-stock-card');
+Route::get('/administration/reports/atk-stock-card/print', [AtkController::class, 'printStockCard'])->name('administration.reports.atk-stock-card.print');
 Route::get('/administration/reports/rf-device-usage', [ReportController::class, 'rfDeviceUsage'])->name('administration.reports.rf-device-usage');
 Route::get('/administration/reports/daily-worker-activity', [ReportController::class, 'dailyWorkerActivity'])->name('administration.reports.daily-worker-activity');
 Route::post('/administration/atk-requests/{atkRequest}/approve', [AtkController::class, 'approveRequest'])->name('administration.atk-requests.approve');

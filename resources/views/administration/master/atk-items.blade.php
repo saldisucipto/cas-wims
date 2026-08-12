@@ -73,6 +73,30 @@
                     class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white md:col-span-4">Add</button>
             </form>
 
+            <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                        <h2 class="text-sm font-semibold text-slate-900">Import Data ATK</h2>
+                        <p class="mt-1 text-sm text-slate-600">Gunakan template resmi agar urutan kolom sesuai database.</p>
+                        <p class="mt-1 text-xs text-slate-500">Header wajib: {{ implode(', ', $importHeaders) }}</p>
+                        <p class="mt-1 text-xs text-amber-700">Template berisi 2 baris contoh — hapus atau ganti baris contoh sebelum import agar tidak ikut tersimpan.</p>
+                    </div>
+                    <a href="{{ route('administration.master.atk.template') }}"
+                        class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white">Download
+                        Template</a>
+                </div>
+
+                <form action="{{ route('administration.master.atk.import') }}" method="POST"
+                    enctype="multipart/form-data" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                    @csrf
+                    <input type="file" name="file" accept=".xlsx,.csv" required
+                        class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white">
+                    <button type="submit"
+                        class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Import
+                        Data</button>
+                </form>
+            </div>
+
             <div class="mt-6 overflow-x-auto">
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 text-slate-600">

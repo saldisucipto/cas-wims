@@ -20,8 +20,8 @@ class DatabaseSeeder extends Seeder
             // PackingStationSeeder::class,
             // RfDeviceSeeder::class,
             // ConsumableSeeder::class,
-            AtkItemSeeder::class,
-            AtkActivitySeeder::class,
+            // AtkItemSeeder::class,
+            // AtkActivitySeeder::class,
             // WmsAccountSeeder::class,
             // WorkingSessionSeeder::class,
         ]);

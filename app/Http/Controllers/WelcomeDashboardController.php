@@ -34,6 +34,12 @@ class WelcomeDashboardController extends Controller
                 'href' => route('rf.registration'),
             ],
             [
+                'icon' => '📝',
+                'title' => 'Permintaan ATK',
+                'description' => ['Ambil ATK', 'tanpa perlu akun.'],
+                'href' => route('atk.take'),
+            ],
+            [
                 'icon' => '👨‍💼',
                 'title' => 'Panel Leader',
                 'description' => ['Validasi Consumable', 'Monitoring', 'Kontrol Operator'],

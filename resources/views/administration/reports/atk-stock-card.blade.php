@@ -14,6 +14,7 @@
                     <p class="wims-breadcrumb">Administration / Reports / Kartu Stok ATK</p>
                 </div>
                 <div class="flex gap-2">
+                    <button id="printAtkStockCard" type="button" class="wims-btn wims-btn-primary">Cetak Kartu Stok</button>
                     <button id="exportAtkStockCard" type="button" class="wims-btn wims-btn-success">Export</button>
                     <a href="{{ route('administration.dashboard') }}"
                         class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Back</a>
@@ -77,47 +78,84 @@
                 <p class="mt-1 text-sm text-slate-600">{{ $filter['label'] }}</p>
             </div>
 
-            <div class="mt-6 overflow-x-auto">
-                <table id="atkStockCardTable" class="wims-table min-w-full text-left text-sm">
-                    <thead>
-                        <tr>
-                            <th>Tanggal</th>
-                            <th>Nomor Transaksi</th>
-                            <th>Jenis Transaksi</th>
-                            <th>Reference</th>
-                            <th>Item ATK</th>
-                            <th>Masuk</th>
-                            <th>Keluar</th>
-                            <th>Saldo</th>
-                            <th>User</th>
-                            <th>Keterangan</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse ($rows as $row)
+            @if (($mode ?? 'detail') === 'summary')
+                <div class="mt-6 overflow-x-auto">
+                    <table id="atkStockCardTable" class="wims-table min-w-full text-left text-sm">
+                        <thead>
                             <tr>
-                                <td>{{ $row->transaction_at?->format('d M Y H:i') }}</td>
-                                <td>{{ $row->transaction_number ?: '-' }}</td>
-                                <td>{{ $row->transaction_type }}</td>
-                                <td>{{ $row->reference ?: ($row->supplier ?: '-') }}</td>
-                                <td>{{ $row->atkItem?->name ?? '-' }}</td>
-                                <td>{{ $row->quantity_in }}</td>
-                                <td>{{ $row->quantity_out }}</td>
-                                <td>{{ $row->balance }}</td>
-                                <td>{{ $row->performer?->name ?? '-' }}</td>
-                                <td>{{ $row->notes ?: '-' }}</td>
+                                <th>Kode ATK</th>
+                                <th>Nama ATK</th>
+                                <th>Kategori</th>
+                                <th>Satuan</th>
+                                <th>Total Masuk</th>
+                                <th>Total Keluar</th>
+                                <th>Saldo Akhir</th>
                             </tr>
-                        @empty
+                        </thead>
+                        <tbody>
+                            @forelse ($rows as $row)
+                                <tr>
+                                    <td>{{ $row['code'] }}</td>
+                                    <td>{{ $row['name'] }}</td>
+                                    <td>{{ $row['category'] }}</td>
+                                    <td>{{ $row['unit'] }}</td>
+                                    <td>{{ $row['total_in'] }}</td>
+                                    <td>{{ $row['total_out'] }}</td>
+                                    <td>{{ $row['balance'] }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="7">
+                                        <div class="wims-empty-state">Tidak ada data untuk filter yang dipilih.</div>
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            @else
+                <div class="mt-6 overflow-x-auto">
+                    <table id="atkStockCardTable" class="wims-table min-w-full text-left text-sm">
+                        <thead>
                             <tr>
-                                <td colspan="10">
-                                    <div class="wims-empty-state">Tidak ada data untuk filter yang dipilih.</div>
-                                </td>
+                                <th>Tanggal</th>
+                                <th>Nomor Transaksi</th>
+                                <th>Jenis Transaksi</th>
+                                <th>Reference</th>
+                                <th>Item ATK</th>
+                                <th>Masuk</th>
+                                <th>Keluar</th>
+                                <th>Saldo</th>
+                                <th>User</th>
+                                <th>Keterangan</th>
                             </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-            <div class="mt-4">{{ $rows->links() }}</div>
+                        </thead>
+                        <tbody>
+                            @forelse ($rows as $row)
+                                <tr>
+                                    <td>{{ $row->transaction_at?->format('d M Y H:i') }}</td>
+                                    <td>{{ $row->transaction_number ?: '-' }}</td>
+                                    <td>{{ $row->transaction_type }}</td>
+                                    <td>{{ $row->reference ?: ($row->supplier ?: '-') }}</td>
+                                    <td>{{ $row->atkItem?->name ?? '-' }}</td>
+                                    <td>{{ $row->quantity_in }}</td>
+                                    <td>{{ $row->quantity_out }}</td>
+                                    <td>{{ $row->balance }}</td>
+                                    <td>{{ $row->taken_by_name ?: ($row->performer?->name ?? '-') }}</td>
+                                    <td>{{ $row->notes ?: '-' }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="10">
+                                        <div class="wims-empty-state">Tidak ada data untuk filter yang dipilih.</div>
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4">{{ $rows->links() }}</div>
+            @endif
         </section>
     </main>
 @endsection
@@ -139,6 +177,24 @@
 
             $('#period').on('change', syncCustomMode);
             syncCustomMode();
+
+            $('#printAtkStockCard').on('click', function() {
+                const atkItemId = $('[name="atk_item_id"]').val();
+                const period = $('#period').val();
+                const startDate = $('#start_date').val();
+                const endDate = $('#end_date').val();
+                const category = $('[name="category"]').val();
+
+                const params = new URLSearchParams();
+                if (atkItemId) params.set('atk_item_id', atkItemId);
+                if (period) params.set('period', period);
+                if (startDate) params.set('start_date', startDate);
+                if (endDate) params.set('end_date', endDate);
+                if (category) params.set('category', category);
+
+                const url = '{{ route('administration.reports.atk-stock-card.print') }}?' + params.toString();
+                window.open(url, '_blank');
+            });
 
             $('#exportAtkStockCard').on('click', function() {
                 const rows = [];

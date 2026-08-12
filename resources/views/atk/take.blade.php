@@ -8,9 +8,9 @@
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Transactions</p>
-                    <h1 class="text-2xl font-bold text-slate-900 sm:text-3xl">Pengambilan ATK</h1>
-                    <p class="text-slate-600">Ambil item ATK langsung. Sistem otomatis catat pengambil dan update Kartu Stok
-                        ATK.</p>
+                    <h1 class="text-2xl font-bold text-slate-900 sm:text-3xl">Permintaan ATK</h1>
+                    <p class="text-slate-600">Ambil item ATK langsung, tanpa perlu akun. Isi nama pengambil dan jumlah item.
+                        Sistem otomatis catat pengambil dan update Kartu Stok ATK.</p>
                 </div>
                 <a href="{{ $backRoute }}"
                     class="inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
@@ -40,7 +40,10 @@
             <form action="{{ route('atk.take.store') }}" method="POST" class="mt-8 space-y-4">
                 @csrf
 
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <input type="text" name="taken_by"
+                        value="{{ old('taken_by', auth()->user()?->name ?? '') }}" placeholder="Nama Pengambil" required
+                        class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                     <input type="date" name="transaction_date"
                         value="{{ old('transaction_date', now()->toDateString()) }}"
                         class="rounded-lg border border-slate-300 px-3 py-2 text-sm" required>

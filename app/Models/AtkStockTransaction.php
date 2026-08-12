@@ -17,6 +17,7 @@ class AtkStockTransaction extends Model
         'balance',
         'notes',
         'performed_by',
+        'taken_by_name',
         'transaction_at',
     ];
 
