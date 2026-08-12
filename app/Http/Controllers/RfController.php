@@ -23,6 +23,7 @@ class RfController extends Controller
                 ->orderBy('name')
                 ->get(['name', 'employee_code', 'function', 'position']),
             'devices' => RfDevice::query()
+                ->where('status', 'Available')
                 ->orderBy('code')
                 ->pluck('code')
                 ->all(),
