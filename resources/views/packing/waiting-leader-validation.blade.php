@@ -56,3 +56,41 @@
         </section>
     </main>
 @endsection
+
+@push('scripts')
+    <script>
+        $(function() {
+            const statusUrl = @json(route('packing.consumable-request-status', ['name' => $employeeName]));
+            const dashboardUrl = @json(route('packing.dashboard', ['name' => $employeeName]));
+            let redirected = false;
+
+            function pollRequestStatus() {
+                if (redirected) {
+                    return;
+                }
+
+                $.get(statusUrl).done(function(data) {
+                    if (data.status === 'Validated') {
+                        redirected = true;
+                        window.location.href = dashboardUrl;
+                        return;
+                    }
+
+                    if (data.status === 'Rejected') {
+                        redirected = true;
+                        Swal.fire({
+                            title: 'Request Rejected',
+                            text: 'Your consumable request was rejected by the leader.',
+                            icon: 'error',
+                            confirmButtonColor: '#1d4ed8',
+                        }).then(function() {
+                            window.location.href = dashboardUrl;
+                        });
+                    }
+                });
+            }
+
+            setInterval(pollRequestStatus, 3000);
+        });
+    </script>
+@endpush

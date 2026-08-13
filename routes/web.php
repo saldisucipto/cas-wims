@@ -22,6 +22,7 @@ Route::get('/packing-dashboard', [PackingController::class, 'dashboard'])->name(
 Route::get('/request-consumable', [PackingController::class, 'requestConsumable'])->name('packing.request-consumable');
 Route::post('/request-consumable', [PackingController::class, 'submitConsumableRequest'])->name('packing.request-consumable.submit');
 Route::get('/waiting-leader-validation', [PackingController::class, 'waitingLeaderValidation'])->name('packing.waiting-leader-validation');
+Route::get('/consumable-request-status', [PackingController::class, 'consumableRequestStatus'])->name('packing.consumable-request-status');
 
 Route::get('/rf-handheld-registration', [RfController::class, 'registration'])->name('rf.registration');
 Route::get('/rf-handheld-dashboard', [RfController::class, 'dashboard'])->name('rf.dashboard');

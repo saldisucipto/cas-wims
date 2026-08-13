@@ -89,6 +89,33 @@
             </article>
         </section>
 
+        <section class="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-300/40">
+            <h2 class="text-lg font-semibold text-slate-900">Latest Consumable Request</h2>
+
+            <div class="mt-4 overflow-hidden rounded-lg border border-slate-200">
+                <table class="min-w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-slate-600">
+                        <tr>
+                            <th class="px-4 py-3 font-semibold">Consumable Item</th>
+                            <th class="px-4 py-3 font-semibold">Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 bg-white text-slate-800">
+                        @forelse ($latestRequestItems as $item)
+                            <tr>
+                                <td class="px-4 py-3">{{ $item->consumable?->name ?? '-' }}</td>
+                                <td class="px-4 py-3 font-semibold">{{ $item->quantity }}</td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td class="px-4 py-3 text-slate-500" colspan="2">No consumable request yet.</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
         <div class="mt-8">
             <button id="finishWorkingButton" type="button"
                 class="inline-flex w-full items-center justify-center rounded-xl bg-red-600 px-6 py-4 text-base font-semibold text-white transition hover:bg-red-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-red-500/60">

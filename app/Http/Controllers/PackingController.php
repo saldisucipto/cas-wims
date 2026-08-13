@@ -25,6 +25,13 @@ class PackingController extends Controller
                 })
                 ->orderBy('name')
                 ->get(['name', 'employee_code', 'function', 'position']),
+            'stations' => PackingStation::query()
+                ->whereIn('status', ['Available', 'Active'])
+                ->whereDoesntHave('workingSessions', function ($query) {
+                    $query->where('status', 'Working');
+                })
+                ->orderBy('id')
+                ->get(['code', 'name', 'station_number']),
         ]);
     }
 
@@ -47,12 +54,13 @@ class PackingController extends Controller
         }
 
         try {
-            $session = $this->resolveOrCreatePackingSession($worker);
+            $session = $this->resolveOrCreatePackingSession($worker, $request->query('station'));
         } catch (RuntimeException $exception) {
             return redirect()->route('packing.registration')->with('error', $exception->getMessage());
         }
 
         $latestRequest = ConsumableRequest::query()
+            ->with('items.consumable')
             ->where('daily_worker_id', $worker->id)
             ->latest('requested_at')
             ->first();
@@ -64,6 +72,7 @@ class PackingController extends Controller
             'wmsPassword' => $session->wmsAccount?->password ?? '-',
             'sessionStartedAt' => $session->started_at?->toIso8601String(),
             'latestRequestStatus' => $latestRequest?->status ?? 'No Request',
+            'latestRequestItems' => $latestRequest?->items ?? collect(),
         ]);
     }
 
@@ -168,7 +177,27 @@ class PackingController extends Controller
             ->first();
 
         return view('packing.waiting-leader-validation', [
+            'employeeName' => $workerName,
+            'requestStatus' => $pendingRequest?->status ?? 'No Request',
             'requestItems' => $pendingRequest?->items ?? collect(),
+        ]);
+    }
+
+    public function consumableRequestStatus(Request $request)
+    {
+        $worker = $this->resolveWorker($request->query('name'));
+
+        if (! $worker) {
+            return response()->json(['status' => 'No Request']);
+        }
+
+        $latestRequest = ConsumableRequest::query()
+            ->where('daily_worker_id', $worker->id)
+            ->latest('requested_at')
+            ->first();
+
+        return response()->json([
+            'status' => $latestRequest?->status ?? 'No Request',
         ]);
     }
 
@@ -184,9 +213,9 @@ class PackingController extends Controller
             ->first();
     }
 
-    private function resolveOrCreatePackingSession(DailyWorker $worker): WorkingSession
+    private function resolveOrCreatePackingSession(DailyWorker $worker, ?string $stationCode = null): WorkingSession
     {
-        return DB::transaction(function () use ($worker) {
+        return DB::transaction(function () use ($worker, $stationCode) {
             $existingSession = WorkingSession::query()
                 ->with(['wmsAccount', 'packingStation'])
                 ->where('daily_worker_id', $worker->id)
@@ -209,17 +238,25 @@ class PackingController extends Controller
                 throw new RuntimeException('Karyawan masih memiliki sesi kerja yang aktif. Silakan selesaikan sesi sebelumnya terlebih dahulu.');
             }
 
-            $station = PackingStation::query()
+            $stationQuery = PackingStation::query()
                 ->lockForUpdate()
                 ->whereIn('status', ['Available', 'Active'])
                 ->whereDoesntHave('workingSessions', function ($query) {
                     $query->where('status', 'Working');
-                })
-                ->orderBy('id')
-                ->first();
+                });
 
-            if (! $station) {
-                throw new RuntimeException('This Packing Station is already occupied.');
+            if ($stationCode) {
+                $station = $stationQuery->where('code', $stationCode)->first();
+
+                if (! $station) {
+                    throw new RuntimeException('Meja packing yang dipilih tidak tersedia atau sedang digunakan.');
+                }
+            } else {
+                $station = $stationQuery->orderBy('id')->first();
+
+                if (! $station) {
+                    throw new RuntimeException('This Packing Station is already occupied.');
+                }
             }
 
             $wmsAccount = null;
