@@ -159,6 +159,18 @@
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.wms-accounts' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.master.wms-accounts' ? 'true' : 'false' }}">WMS
                                     Accounts</a></li>
+                            <li><a href="{{ route('administration.master.manpower-activities') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.manpower-activities' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.master.manpower-activities' ? 'true' : 'false' }}">Manpower
+                                    Activities</a></li>
+                            <li><a href="{{ route('administration.master.manpower-vas-schedules') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.manpower-vas-schedules' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.master.manpower-vas-schedules' ? 'true' : 'false' }}">Manpower
+                                    VAS Schedule</a></li>
+                            <li><a href="{{ route('administration.master.manpower-device-availabilities') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.manpower-device-availabilities' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.master.manpower-device-availabilities' ? 'true' : 'false' }}">Device
+                                    Availability</a></li>
                             <li><a href="{{ route('administration.master.system-users') }}"
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.system-users' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.master.system-users' ? 'true' : 'false' }}">System
@@ -219,6 +231,14 @@
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.reports.working-sessions' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.reports.working-sessions' ? 'true' : 'false' }}">Working
                                     Session Report</a></li>
+                            <li><a href="{{ route('administration.manpower-planning') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.manpower-planning' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.manpower-planning' ? 'true' : 'false' }}">Manpower
+                                    Planning</a></li>
+                            <li><a href="{{ route('administration.manpower-planning.history') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.manpower-planning.history' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.manpower-planning.history' ? 'true' : 'false' }}">Planning
+                                    History</a></li>
                             <li><a href="{{ route('administration.reports.atk-stock-card') }}"
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.reports.atk-stock-card' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.reports.atk-stock-card' ? 'true' : 'false' }}">Kartu
@@ -666,6 +686,11 @@
                         <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
                             <h3 class="text-base font-semibold text-slate-900">Working Session Report</h3><a
                                 href="{{ route('administration.reports.working-sessions') }}"
+                                class="mt-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open</a>
+                        </article>
+                        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                            <h3 class="text-base font-semibold text-slate-900">Manpower Planning</h3><a
+                                href="{{ route('administration.manpower-planning') }}"
                                 class="mt-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open</a>
                         </article>
                         <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">

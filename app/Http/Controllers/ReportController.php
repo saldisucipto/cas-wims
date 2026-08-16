@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Consumable;
 use App\Models\ConsumableRequestItem;
 use App\Models\DailyWorker;
 use App\Models\RfDevice;
@@ -26,7 +25,7 @@ class ReportController extends Controller
         $filter = $this->resolveDateFilter($request);
 
         $query = WorkingSession::query()
-            ->with(['dailyWorker', 'packingStation', 'rfDevice'])
+            ->with(['dailyWorker', 'packingStation', 'rfDevice', 'wmsAccount'])
             ->whereBetween('started_at', [$filter['start'], $filter['end']])
             ->latest('started_at');
 
@@ -280,7 +279,7 @@ class ReportController extends Controller
         if ($period === 'custom' && $startDate && $endDate) {
             $start = Carbon::parse($startDate)->startOfDay();
             $end = Carbon::parse($endDate)->endOfDay();
-            $label = $start->translatedFormat('d F Y') . ' - ' . $end->translatedFormat('d F Y');
+            $label = $start->translatedFormat('d F Y').' - '.$end->translatedFormat('d F Y');
 
             return [
                 'period' => 'custom',
@@ -308,7 +307,7 @@ class ReportController extends Controller
             'end_date' => $end->toDateString(),
             'start' => $start,
             'end' => $end,
-            'label' => $label . ' (' . $start->translatedFormat('d F Y') . ' - ' . $end->translatedFormat('d F Y') . ')',
+            'label' => $label.' ('.$start->translatedFormat('d F Y').' - '.$end->translatedFormat('d F Y').')',
         ];
     }
 

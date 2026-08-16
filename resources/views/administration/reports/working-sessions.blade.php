@@ -51,6 +51,7 @@
                             <th>Type</th>
                             <th>Station</th>
                             <th>RF</th>
+                            <th>WMS Account</th>
                             <th>Status</th>
                             <th>Close Type</th>
                             <th>Action</th>
@@ -64,6 +65,7 @@
                                 <td>{{ ucfirst($row->session_type) }}</td>
                                 <td>{{ $row->packingStation?->name ?? '-' }}</td>
                                 <td>{{ $row->rfDevice?->code ?? '-' }}</td>
+                                <td>{{ $row->wmsAccount?->username ?? '-' }}</td>
                                 <td>{{ $row->status }}</td>
                                 <td>
                                     @if ($row->close_type === 'Force Close')
@@ -96,7 +98,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8">
+                                <td colspan="9">
                                     <div class="wims-empty-state">Tidak ada data untuk periode yang dipilih.</div>
                                 </td>
                             </tr>

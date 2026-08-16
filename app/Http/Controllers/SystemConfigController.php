@@ -52,7 +52,7 @@ class SystemConfigController extends Controller
             return $redirect;
         }
 
-        $keys = ['morning_shift_start', 'morning_shift_end', 'night_shift_start', 'night_shift_end'];
+        $keys = ['morning_shift_start', 'morning_shift_end', 'night_shift_start', 'night_shift_end', 'shift_duration', 'non_productive_hours', 'effective_working_hours'];
 
         return view('administration.system.shift-settings', [
             'settings' => SystemSetting::query()->whereIn('setting_key', $keys)->pluck('setting_value', 'setting_key'),
@@ -70,6 +70,9 @@ class SystemConfigController extends Controller
             'morning_shift_end' => ['required', 'string', 'max:10'],
             'night_shift_start' => ['required', 'string', 'max:10'],
             'night_shift_end' => ['required', 'string', 'max:10'],
+            'shift_duration' => ['required', 'numeric', 'min:1', 'max:24'],
+            'non_productive_hours' => ['required', 'numeric', 'min:0', 'max:24'],
+            'effective_working_hours' => ['required', 'numeric', 'min:1', 'max:24'],
         ]);
 
         foreach ($data as $key => $value) {
@@ -91,16 +94,16 @@ class SystemConfigController extends Controller
         $stockLogs = StockTransaction::query()->with('consumable')->latest('transaction_at')->take(30)->get()->map(function ($log) {
             return [
                 'time' => $log->transaction_at,
-                'type' => 'Stock ' . $log->transaction_type,
-                'description' => ($log->consumable?->name ?? '-') . ' (' . $log->quantity_before . ' -> ' . $log->quantity_after . ')',
+                'type' => 'Stock '.$log->transaction_type,
+                'description' => ($log->consumable?->name ?? '-').' ('.$log->quantity_before.' -> '.$log->quantity_after.')',
             ];
         });
 
         $requestLogs = ConsumableRequest::query()->with('dailyWorker')->latest('updated_at')->take(30)->get()->map(function ($log) {
             return [
                 'time' => $log->updated_at,
-                'type' => 'Consumable Request ' . $log->status,
-                'description' => ($log->dailyWorker?->name ?? '-') . ' - ' . $log->request_number,
+                'type' => 'Consumable Request '.$log->status,
+                'description' => ($log->dailyWorker?->name ?? '-').' - '.$log->request_number,
             ];
         });
 
@@ -117,7 +120,7 @@ class SystemConfigController extends Controller
                 return [
                     'time' => $log->force_closed_at,
                     'type' => 'Force Closed Working Session',
-                    'description' => ($log->forceCloser?->name ?? 'Administrator') . ' -> ' . ($log->dailyWorker?->name ?? '-') . ' (' . $resource . ')',
+                    'description' => ($log->forceCloser?->name ?? 'Administrator').' -> '.($log->dailyWorker?->name ?? '-').' ('.$resource.')',
                 ];
             });
 
