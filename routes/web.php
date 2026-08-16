@@ -126,6 +126,10 @@ Route::get('/administration/master-data/manpower-device-availabilities', [Manpow
 Route::post('/administration/master-data/manpower-device-availabilities', [ManpowerPlanningController::class, 'storeDeviceAvailability'])->name('administration.master.manpower-device-availabilities.store');
 Route::post('/administration/master-data/manpower-device-availabilities/{deviceAvailability}', [ManpowerPlanningController::class, 'updateDeviceAvailability'])->name('administration.master.manpower-device-availabilities.update');
 Route::post('/administration/master-data/manpower-device-availabilities/{deviceAvailability}/delete', [ManpowerPlanningController::class, 'destroyDeviceAvailability'])->name('administration.master.manpower-device-availabilities.delete');
+Route::get('/administration/master-data/manpower-division-rules', [ManpowerPlanningController::class, 'divisionRules'])->name('administration.master.manpower-division-rules');
+Route::post('/administration/master-data/manpower-division-rules', [ManpowerPlanningController::class, 'storeDivisionRule'])->name('administration.master.manpower-division-rules.store');
+Route::post('/administration/master-data/manpower-division-rules/{manpowerDivisionRule}', [ManpowerPlanningController::class, 'updateDivisionRule'])->name('administration.master.manpower-division-rules.update');
+Route::post('/administration/master-data/manpower-division-rules/{manpowerDivisionRule}/delete', [ManpowerPlanningController::class, 'destroyDivisionRule'])->name('administration.master.manpower-division-rules.delete');
 Route::post('/administration/atk-requests/{atkRequest}/approve', [AtkController::class, 'approveRequest'])->name('administration.atk-requests.approve');
 Route::post('/administration/atk-requests/{atkRequest}/reject', [AtkController::class, 'rejectRequest'])->name('administration.atk-requests.reject');
 

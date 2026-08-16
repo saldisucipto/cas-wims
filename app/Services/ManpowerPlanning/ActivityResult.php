@@ -4,6 +4,9 @@ namespace App\Services\ManpowerPlanning;
 
 final readonly class ActivityResult
 {
+    /**
+     * @param  array<int, int>  $allowedShifts
+     */
     public function __construct(
         public string $division,
         public string $name,
@@ -15,6 +18,9 @@ final readonly class ActivityResult
         public string $productivityUnit,
         public string $manpowerType,
         public ?string $deviceType,
+        public array $allowedShifts,
+        public string $startTime,
+        public string $endTime,
         public ?int $minimumManpower,
         public int $availableManpower,
         public bool $isWorkloadDriven,

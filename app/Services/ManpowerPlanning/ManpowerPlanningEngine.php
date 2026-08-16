@@ -19,39 +19,140 @@ class ManpowerPlanningEngine
     private const DIVISION_ORDER = ['Inbound', 'Outbound'];
 
     /**
-     * Evaluate manpower requirement per activity, roll it up per division,
-     * then apply the device constraint to produce a warehouse-level shift decision.
+     * Evaluate manpower per activity, roll it up per division with the
+     * operational shift rule, then apply the warehouse device constraint.
      */
     public function run(PlanningInput $input): PlanningResult
     {
-        $allActivities = [];
-        $activitiesByDivision = [];
+        $byDivision = [];
 
         foreach ($input->activities as $activity) {
-            $result = $this->calculateActivity($activity, $input);
-            $activitiesByDivision[$activity['division']][] = $result;
-            $allActivities[] = $result;
+            $byDivision[$activity['division']][] = $this->calculateActivity($activity, $input);
+        }
+
+        $divisionNames = $this->orderedDivisions(array_keys($byDivision));
+
+        $minShifts = [];
+        foreach ($byDivision as $division => $activities) {
+            $minShifts[$division] = $this->minimumShift($division, $activities, $input);
+        }
+
+        $options = [];
+        foreach ($divisionNames as $division) {
+            $options[$division] = $minShifts[$division] === 1 ? [1, 2] : [$minShifts[$division]];
+        }
+
+        $configs = $this->enumerateConfigs($divisionNames, $options);
+        $firstEvaluation = $this->evaluateAllocation($byDivision, $configs[0], $input);
+
+        $chosenConfig = null;
+        $chosenEvaluation = null;
+
+        foreach ($configs as $config) {
+            $evaluation = $this->evaluateAllocation($byDivision, $config, $input);
+
+            if ($evaluation['feasible']) {
+                $chosenConfig = $config;
+                $chosenEvaluation = $evaluation;
+                break;
+            }
+        }
+
+        if ($chosenConfig === null) {
+            $chosenConfig = end($configs);
+            $chosenEvaluation = $this->evaluateAllocation($byDivision, $chosenConfig, $input);
+            $manpowerBottlenecks = $chosenEvaluation['manpowerBottlenecks'];
+            $deviceBottlenecks = $chosenEvaluation['deviceBottlenecks'];
+        } else {
+            $escalated = array_sum($chosenConfig) > array_sum($configs[0]);
+            $manpowerBottlenecks = $escalated ? $firstEvaluation['manpowerBottlenecks'] : [];
+            $deviceBottlenecks = $escalated ? $firstEvaluation['deviceBottlenecks'] : [];
         }
 
         $divisions = [];
 
-        foreach ($this->orderedDivisions(array_keys($activitiesByDivision)) as $division) {
-            $divisions[$division] = $this->calculateDivision($division, $activitiesByDivision[$division], $input);
+        foreach ($divisionNames as $division) {
+            $divisions[$division] = $this->buildDivisionResult(
+                $division,
+                $byDivision[$division],
+                $chosenConfig[$division],
+                $minShifts[$division],
+                $input,
+                $chosenEvaluation,
+            );
         }
-
-        $overall = $this->calculateOverall($allActivities, $input);
 
         return new PlanningResult(
             divisions: $divisions,
             effectiveHours: $input->effectiveHours,
-            devices: $overall['devices'],
-            recommendedShifts: $overall['recommendedShifts'],
-            overallStatus: $overall['overallStatus'],
-            manpowerFeasible: $overall['manpowerFeasible'],
-            deviceFeasible: $overall['deviceFeasible'],
-            manpowerBottlenecks: $overall['manpowerBottlenecks'],
-            deviceBottlenecks: $overall['deviceBottlenecks'],
+            devices: $chosenEvaluation['devices'],
+            recommendedShifts: $chosenEvaluation['recommendedShifts'],
+            overallStatus: $chosenEvaluation['overallStatus'],
+            manpowerFeasible: $chosenEvaluation['manpowerFeasible'],
+            deviceFeasible: $chosenEvaluation['deviceFeasible'],
+            manpowerBottlenecks: $manpowerBottlenecks,
+            deviceBottlenecks: $deviceBottlenecks,
         );
+    }
+
+    /**
+     * @param  array<int, string>  $divisions
+     * @param  array<string, array<int, int>>  $options
+     * @return array<int, array<string, int>>
+     */
+    private function enumerateConfigs(array $divisions, array $options): array
+    {
+        $configs = [[]];
+
+        foreach ($divisions as $division) {
+            $next = [];
+
+            foreach ($configs as $config) {
+                foreach ($options[$division] as $count) {
+                    $config[$division] = $count;
+                    $next[] = $config;
+                }
+            }
+
+            $configs = $next;
+        }
+
+        usort($configs, function (array $a, array $b): int {
+            $sumA = array_sum($a);
+            $sumB = array_sum($b);
+
+            if ($sumA !== $sumB) {
+                return $sumA <=> $sumB;
+            }
+
+            foreach (array_keys($a) as $division) {
+                if ($a[$division] !== $b[$division]) {
+                    return $a[$division] <=> $b[$division];
+                }
+            }
+
+            return 0;
+        });
+
+        return $configs;
+    }
+
+    /**
+     * @param  array<int, ActivityResult>  $activities
+     */
+    private function minimumShift(string $division, array $activities, PlanningInput $input): int
+    {
+        $rule = $input->divisionRules[$division] ?? ['minimum_shift' => 1, 'reason' => null];
+        $ruleMinimum = (int) ($rule['minimum_shift'] ?? 1);
+
+        $windowMinimum = 1;
+        foreach ($activities as $activity) {
+            if (! in_array(1, $activity->allowedShifts, true)) {
+                $windowMinimum = 2;
+            }
+        }
+
+        return max($ruleMinimum, $windowMinimum);
     }
 
     /**
@@ -67,7 +168,10 @@ class ManpowerPlanningEngine
      *     manpower_type: string,
      *     minimum_manpower: int|null,
      *     available_manpower: int,
-     *     device_type: string|null
+     *     device_type: string|null,
+     *     allowed_shifts: string,
+     *     start_time: string,
+     *     end_time: string
      * }  $activity
      */
     private function calculateActivity(array $activity, PlanningInput $input): ActivityResult
@@ -79,6 +183,9 @@ class ManpowerPlanningEngine
         $minimumManpower = $activity['minimum_manpower'];
         $availableManpower = (int) $activity['available_manpower'];
         $deviceType = $activity['device_type'] ?? null;
+        $allowedShifts = $this->parseAllowedShifts($activity['allowed_shifts'] ?? 'S1,S2');
+        $startTime = $activity['start_time'] ?? '07:00';
+        $endTime = $activity['end_time'] ?? '23:00';
 
         $workload = $this->resolveSourceVolume($workloadSource, $input) * $conversionRatio;
         $capacityPerShift = $productivityPerHour * $input->effectiveHours;
@@ -97,6 +204,9 @@ class ManpowerPlanningEngine
                 productivityUnit: $activity['productivity_unit'],
                 manpowerType: $manpowerType,
                 deviceType: $deviceType,
+                allowedShifts: $allowedShifts,
+                startTime: $startTime,
+                endTime: $endTime,
                 minimumManpower: $minimumManpower,
                 availableManpower: $availableManpower,
                 isWorkloadDriven: false,
@@ -135,6 +245,9 @@ class ManpowerPlanningEngine
             productivityUnit: $activity['productivity_unit'],
             manpowerType: $manpowerType,
             deviceType: $deviceType,
+            allowedShifts: $allowedShifts,
+            startTime: $startTime,
+            endTime: $endTime,
             minimumManpower: $minimumManpower,
             availableManpower: $availableManpower,
             isWorkloadDriven: true,
@@ -154,202 +267,241 @@ class ManpowerPlanningEngine
     }
 
     /**
-     * @param  array<int, ActivityResult>  $activities
-     */
-    private function calculateDivision(string $division, array $activities, PlanningInput $input): DivisionResult
-    {
-        $workloadDriven = array_values(array_filter($activities, fn (ActivityResult $result) => $result->isWorkloadDriven));
-
-        $allOneShift = true;
-        $allTwoShift = true;
-
-        foreach ($workloadDriven as $activity) {
-            $allOneShift = $allOneShift && $activity->oneShiftFeasible;
-            $allTwoShift = $allTwoShift && $activity->twoShiftFeasible;
-        }
-
-        $recommendedShifts = $allOneShift ? 1 : ($allTwoShift ? 2 : 0);
-
-        $bottlenecks = [];
-
-        if ($recommendedShifts === 2) {
-            foreach ($workloadDriven as $activity) {
-                if (! $activity->oneShiftFeasible) {
-                    $bottlenecks[] = $activity->name;
-                }
-            }
-        } elseif ($recommendedShifts === 0) {
-            foreach ($workloadDriven as $activity) {
-                if (! $activity->twoShiftFeasible) {
-                    $bottlenecks[] = $activity->name;
-                }
-            }
-        }
-
-        [$sourceVolume, $sourceUnit] = $this->divisionSource($division, $input);
-
-        return new DivisionResult(
-            division: $division,
-            sourceVolume: $sourceVolume,
-            sourceUnit: $sourceUnit,
-            activities: $activities,
-            recommendedShifts: $recommendedShifts,
-            status: $recommendedShifts === 0 ? 'CRITICAL' : 'FEASIBLE',
-            bottlenecks: $bottlenecks,
-            totalMppOneShift: array_sum(array_map(fn (ActivityResult $result) => $result->requiredOneShift, $activities)),
-            totalMppPerShift: array_sum(array_map(fn (ActivityResult $result) => $result->requiredTwoShifts, $activities)),
-        );
-    }
-
-    /**
-     * @param  array<int, ActivityResult>  $activities
+     * @param  array<string, array<int, ActivityResult>>  $byDivision
+     * @param  array<string, int>  $shiftCounts
      * @return array{
-     *     devices: array<string, DeviceResult>,
-     *     recommendedShifts: int,
-     *     overallStatus: string,
+     *     feasible: bool,
      *     manpowerFeasible: bool,
      *     deviceFeasible: bool,
      *     manpowerBottlenecks: array<int, string>,
-     *     deviceBottlenecks: array<int, string>
+     *     deviceBottlenecks: array<int, string>,
+     *     devices: array<string, DeviceResult>,
+     *     divisionPlans: array<string, array{shift1: array<int, ShiftActivityResult>, shift2: array<int, ShiftActivityResult>}>,
+     *     recommendedShifts: int,
+     *     overallStatus: string
      * }
      */
-    private function calculateOverall(array $activities, PlanningInput $input): array
+    private function evaluateAllocation(array $byDivision, array $shiftCounts, PlanningInput $input): array
     {
-        $workloadDriven = array_values(array_filter($activities, fn (ActivityResult $result) => $result->isWorkloadDriven));
+        $divisionPlans = [];
+        $deviceShift1 = [];
+        $deviceShift2 = [];
+        $manpowerFeasible = true;
+        $manpowerBottlenecks = [];
 
-        $oneShiftManpowerFeasible = true;
-        $twoShiftManpowerFeasible = true;
-        $manpowerBottleneckOne = [];
-        $manpowerBottleneckTwo = [];
+        foreach ($byDivision as $division => $activities) {
+            $shiftCount = $shiftCounts[$division] ?? 1;
+            $shift1 = [];
+            $shift2 = [];
 
-        foreach ($workloadDriven as $activity) {
-            if (! $activity->oneShiftFeasible) {
-                $oneShiftManpowerFeasible = false;
-                $manpowerBottleneckOne[] = $activity->name;
+            foreach ($activities as $activity) {
+                $mppShift1 = $this->mppForShift($activity, 1, $shiftCount);
+                $mppShift2 = $this->mppForShift($activity, 2, $shiftCount);
+
+                if ($mppShift1 !== null) {
+                    $shift1[] = new ShiftActivityResult($activity->name, $activity->code, $mppShift1, $activity->deviceType, $activity->startTime, $activity->endTime);
+
+                    if ($activity->deviceType !== null) {
+                        $deviceShift1[$activity->deviceType] = ($deviceShift1[$activity->deviceType] ?? 0) + $mppShift1;
+                    }
+
+                    if ($activity->isWorkloadDriven && $mppShift1 > $activity->availableManpower) {
+                        $manpowerFeasible = false;
+                        $manpowerBottlenecks[] = $activity->name;
+                    }
+                }
+
+                if ($mppShift2 !== null) {
+                    $shift2[] = new ShiftActivityResult($activity->name, $activity->code, $mppShift2, $activity->deviceType, $activity->startTime, $activity->endTime);
+
+                    if ($activity->deviceType !== null) {
+                        $deviceShift2[$activity->deviceType] = ($deviceShift2[$activity->deviceType] ?? 0) + $mppShift2;
+                    }
+
+                    if ($activity->isWorkloadDriven && $mppShift2 > $activity->availableManpower) {
+                        $manpowerFeasible = false;
+                        $manpowerBottlenecks[] = $activity->name;
+                    }
+                }
             }
 
-            if (! $activity->twoShiftFeasible) {
-                $twoShiftManpowerFeasible = false;
-                $manpowerBottleneckTwo[] = $activity->name;
-            }
+            $divisionPlans[$division] = ['shift1' => $shift1, 'shift2' => $shift2];
         }
 
         $deviceTypes = array_keys($input->devices);
 
-        foreach ($activities as $activity) {
-            if ($activity->deviceType !== null) {
-                $deviceTypes[] = $activity->deviceType;
+        foreach ([$deviceShift1, $deviceShift2] as $map) {
+            foreach (array_keys($map) as $type) {
+                if (! in_array($type, $deviceTypes, true)) {
+                    $deviceTypes[] = $type;
+                }
             }
         }
 
         $deviceTypes = array_values(array_unique($deviceTypes));
         sort($deviceTypes);
 
-        $deviceResults = [];
-        $oneShiftDeviceFeasible = true;
-        $twoShiftDeviceFeasible = true;
-        $deviceBottleneckOne = [];
-        $deviceBottleneckTwo = [];
+        $devices = [];
+        $deviceFeasible = true;
+        $deviceBottlenecks = [];
 
         foreach ($deviceTypes as $type) {
             $ready = (int) ($input->devices[$type] ?? 0);
-            $requiredOneShift = $this->sumDevice($activities, $type, true);
-            $requiredPerShift = $this->sumDevice($activities, $type, false);
+            $shift1 = $deviceShift1[$type] ?? 0;
+            $shift2 = $deviceShift2[$type] ?? 0;
+            $physical = max($shift1, $shift2);
+            $shortage = max(0, $physical - $ready);
 
-            if ($requiredOneShift > $ready) {
-                $oneShiftDeviceFeasible = false;
-                $deviceBottleneckOne[] = $type;
+            if ($shortage > 0) {
+                $deviceFeasible = false;
+                $deviceBottlenecks[] = $type;
             }
 
-            if ($requiredPerShift > $ready) {
-                $twoShiftDeviceFeasible = false;
-                $deviceBottleneckTwo[] = $type;
-            }
-
-            $deviceResults[$type] = new DeviceResult(
+            $devices[$type] = new DeviceResult(
                 deviceType: $type,
                 readyQuantity: $ready,
-                requiredOneShift: $requiredOneShift,
-                requiredPerShift: $requiredPerShift,
-                physicalRequired: 0,
-                shortage: 0,
-                status: 'FEASIBLE',
-            );
-        }
-
-        $oneShiftFeasible = $oneShiftManpowerFeasible && $oneShiftDeviceFeasible;
-        $twoShiftFeasible = $twoShiftManpowerFeasible && $twoShiftDeviceFeasible;
-
-        if ($oneShiftFeasible) {
-            $recommendedShifts = 1;
-            $overallStatus = 'FEASIBLE';
-            $manpowerFeasible = true;
-            $deviceFeasible = true;
-            $manpowerBottlenecks = [];
-            $deviceBottlenecks = [];
-            $physicalScenario = 'one';
-        } elseif ($twoShiftFeasible) {
-            $recommendedShifts = 2;
-            $overallStatus = 'FEASIBLE';
-            $manpowerFeasible = true;
-            $deviceFeasible = true;
-            $manpowerBottlenecks = $manpowerBottleneckOne;
-            $deviceBottlenecks = $deviceBottleneckOne;
-            $physicalScenario = 'two';
-        } else {
-            $recommendedShifts = 0;
-            $overallStatus = 'CRITICAL';
-            $manpowerFeasible = $twoShiftManpowerFeasible;
-            $deviceFeasible = $twoShiftDeviceFeasible;
-            $manpowerBottlenecks = $manpowerBottleneckTwo;
-            $deviceBottlenecks = $deviceBottleneckTwo;
-            $physicalScenario = 'two';
-        }
-
-        $finalDevices = [];
-
-        foreach ($deviceResults as $type => $device) {
-            $physicalRequired = $physicalScenario === 'one' ? $device->requiredOneShift : $device->requiredPerShift;
-            $shortage = max(0, $physicalRequired - $device->readyQuantity);
-
-            $finalDevices[$type] = new DeviceResult(
-                deviceType: $device->deviceType,
-                readyQuantity: $device->readyQuantity,
-                requiredOneShift: $device->requiredOneShift,
-                requiredPerShift: $device->requiredPerShift,
-                physicalRequired: $physicalRequired,
+                requiredOneShift: $shift1,
+                requiredPerShift: $shift2,
+                physicalRequired: $physical,
                 shortage: $shortage,
                 status: $shortage > 0 ? 'SHORTAGE' : 'FEASIBLE',
             );
         }
 
+        $feasible = $manpowerFeasible && $deviceFeasible;
+
+        $maxShift = 1;
+        foreach ($shiftCounts as $count) {
+            $maxShift = max($maxShift, $count);
+        }
+
         return [
-            'devices' => $finalDevices,
-            'recommendedShifts' => $recommendedShifts,
-            'overallStatus' => $overallStatus,
+            'feasible' => $feasible,
             'manpowerFeasible' => $manpowerFeasible,
             'deviceFeasible' => $deviceFeasible,
             'manpowerBottlenecks' => array_values(array_unique($manpowerBottlenecks)),
             'deviceBottlenecks' => array_values(array_unique($deviceBottlenecks)),
+            'devices' => $devices,
+            'divisionPlans' => $divisionPlans,
+            'recommendedShifts' => $feasible ? $maxShift : 0,
+            'overallStatus' => $feasible ? 'FEASIBLE' : 'CRITICAL',
         ];
     }
 
     /**
      * @param  array<int, ActivityResult>  $activities
+     * @param  array{
+     *     feasible: bool,
+     *     manpowerFeasible: bool,
+     *     deviceFeasible: bool,
+     *     manpowerBottlenecks: array<int, string>,
+     *     deviceBottlenecks: array<int, string>,
+     *     devices: array<string, DeviceResult>,
+     *     divisionPlans: array<string, array{shift1: array<int, ShiftActivityResult>, shift2: array<int, ShiftActivityResult>}>,
+     *     recommendedShifts: int,
+     *     overallStatus: string
+     * }  $evaluation
      */
-    private function sumDevice(array $activities, string $type, bool $oneShift): int
+    private function buildDivisionResult(string $division, array $activities, int $shiftCount, int $minimumShift, PlanningInput $input, array $evaluation): DivisionResult
     {
-        $sum = 0;
+        $plan = $evaluation['divisionPlans'][$division];
+
+        $divisionFeasible = true;
 
         foreach ($activities as $activity) {
-            if ($activity->deviceType !== $type) {
+            if (! $activity->isWorkloadDriven) {
                 continue;
             }
 
-            $sum += $oneShift ? $activity->requiredOneShift : $activity->requiredTwoShifts;
+            $mppShift1 = $this->mppForShift($activity, 1, $shiftCount);
+            $mppShift2 = $this->mppForShift($activity, 2, $shiftCount);
+
+            if (($mppShift1 !== null && $mppShift1 > $activity->availableManpower) || ($mppShift2 !== null && $mppShift2 > $activity->availableManpower)) {
+                $divisionFeasible = false;
+                break;
+            }
         }
 
-        return $sum;
+        $bottlenecks = [];
+
+        foreach ($activities as $activity) {
+            if (! $activity->isWorkloadDriven) {
+                continue;
+            }
+
+            if ($minimumShift === 2 || ! $divisionFeasible) {
+                $mppShift1 = $this->mppForShift($activity, 1, $shiftCount);
+                $mppShift2 = $this->mppForShift($activity, 2, $shiftCount);
+
+                if (($mppShift1 !== null && $mppShift1 > $activity->availableManpower) || ($mppShift2 !== null && $mppShift2 > $activity->availableManpower)) {
+                    $bottlenecks[] = $activity->name;
+                }
+            } elseif ($shiftCount === 2 && $activity->requiredOneShift > $activity->availableManpower) {
+                $bottlenecks[] = $activity->name;
+            }
+        }
+
+        $totalMpp = 0;
+        foreach ($plan['shift1'] as $entry) {
+            $totalMpp += $entry->mpp;
+        }
+        foreach ($plan['shift2'] as $entry) {
+            $totalMpp += $entry->mpp;
+        }
+
+        [$sourceVolume, $sourceUnit] = $this->divisionSource($division, $input);
+
+        $rule = $input->divisionRules[$division] ?? ['reason' => null];
+
+        return new DivisionResult(
+            division: $division,
+            sourceVolume: $sourceVolume,
+            sourceUnit: $sourceUnit,
+            activities: $activities,
+            recommendedShifts: $divisionFeasible ? $shiftCount : 0,
+            status: $divisionFeasible ? 'FEASIBLE' : 'CRITICAL',
+            bottlenecks: $bottlenecks,
+            totalMppOneShift: array_sum(array_map(fn (ActivityResult $result) => $result->requiredOneShift, $activities)),
+            totalMppPerShift: array_sum(array_map(fn (ActivityResult $result) => $result->requiredTwoShifts, $activities)),
+            minimumShift: $minimumShift,
+            reason: $rule['reason'] ?? null,
+            shift1: $plan['shift1'],
+            shift2: $plan['shift2'],
+            totalMpp: $totalMpp,
+        );
+    }
+
+    private function mppForShift(ActivityResult $activity, int $shift, int $shiftCount): ?int
+    {
+        if ($shiftCount === 1) {
+            return ($shift === 1 && in_array(1, $activity->allowedShifts, true)) ? $activity->requiredOneShift : null;
+        }
+
+        if (! in_array($shift, $activity->allowedShifts, true)) {
+            return null;
+        }
+
+        return count($activity->allowedShifts) === 1 ? $activity->requiredOneShift : $activity->requiredTwoShifts;
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function parseAllowedShifts(string $allowed): array
+    {
+        $shifts = [];
+
+        foreach (explode(',', $allowed) as $segment) {
+            $segment = trim($segment);
+
+            if ($segment === 'S1') {
+                $shifts[] = 1;
+            } elseif ($segment === 'S2') {
+                $shifts[] = 2;
+            }
+        }
+
+        return $shifts === [] ? [1, 2] : $shifts;
     }
 
     private function resolveSourceVolume(string $source, PlanningInput $input): float

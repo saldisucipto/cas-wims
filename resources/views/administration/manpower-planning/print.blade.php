@@ -368,6 +368,9 @@
 
         @foreach ($divisions as $division)
             <div class="section-title">{{ $division['division'] }} Breakdown</div>
+            @if ($division['reason'])
+                <p style="margin:-4px 0 8px;font-size:10px;color:#1d4ed8;">Reason: {{ $division['reason'] }}</p>
+            @endif
             <table class="doc-table">
                 <thead>
                     <tr>
@@ -398,21 +401,32 @@
             </table>
         @endforeach
 
-        @php $twoShiftDivisions = collect($divisions)->filter(fn($d) => $d['shift'] === 2); @endphp
-        @if ($twoShiftDivisions->isNotEmpty())
+        @php $hasShiftBreakdown = collect($divisions)->contains(fn($d) => ! empty($d['shift1']) || ! empty($d['shift2'])); @endphp
+        @if ($hasShiftBreakdown)
             <div class="section-title">Shift Breakdown</div>
-            @foreach ($twoShiftDivisions as $division)
-                <p style="margin-bottom:4px;font-weight:700;">{{ $division['division'] }}</p>
-                <table class="doc-table">
-                    <thead>
-                        <tr><th>Shift</th><th>MPP / Shift</th><th>Total MPP</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr><td class="text-center">Shift 1</td><td class="text-center">{{ $formatNumber($division['mpp_per_shift']) }}</td><td class="text-center">{{ $formatNumber($division['mpp_per_shift']) }}</td></tr>
-                        <tr><td class="text-center">Shift 2</td><td class="text-center">{{ $formatNumber($division['mpp_per_shift']) }}</td><td class="text-center">{{ $formatNumber($division['mpp_per_shift']) }}</td></tr>
-                        <tr class="total-row"><td class="text-center">Total</td><td class="text-center">{{ $formatNumber($division['mpp_per_shift']) }}</td><td class="text-center">{{ $formatNumber($division['total_mpp']) }}</td></tr>
-                    </tbody>
-                </table>
+            @foreach ($divisions as $division)
+                @if (! empty($division['shift1']))
+                    <p style="margin-bottom:4px;font-weight:700;">{{ $division['division'] }} &mdash; Shift 1 (07:00&ndash;15:00)</p>
+                    <table class="doc-table">
+                        <thead><tr><th>Position</th><th>MPP</th><th>Device</th></tr></thead>
+                        <tbody>
+                            @foreach ($division['shift1'] as $entry)
+                                <tr><td>{{ $entry['name'] }}</td><td class="text-center">{{ $formatNumber($entry['mpp']) }}</td><td class="text-center">{{ $entry['device'] ?? '-' }}</td></tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @endif
+                @if (! empty($division['shift2']))
+                    <p style="margin-bottom:4px;font-weight:700;">{{ $division['division'] }} &mdash; Shift 2 (15:00&ndash;23:00)</p>
+                    <table class="doc-table">
+                        <thead><tr><th>Position</th><th>MPP</th><th>Device</th></tr></thead>
+                        <tbody>
+                            @foreach ($division['shift2'] as $entry)
+                                <tr><td>{{ $entry['name'] }}</td><td class="text-center">{{ $formatNumber($entry['mpp']) }}</td><td class="text-center">{{ $entry['device'] ?? '-' }}</td></tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @endif
             @endforeach
         @endif
 
@@ -438,13 +452,13 @@
         <div class="section-title">Total Manpower Summary</div>
         <table class="doc-table">
             <thead>
-                <tr><th>Division</th><th>MPP / Shift</th><th>Shift</th><th>Total MPP</th></tr>
+                <tr><th>Division</th><th>Min Shift</th><th>Shift</th><th>Total MPP</th></tr>
             </thead>
             <tbody>
                 @foreach ($divisions as $division)
                     <tr>
                         <td>{{ $division['division'] }}</td>
-                        <td class="text-center">{{ $formatNumber($division['mpp_per_shift']) }}</td>
+                        <td class="text-center">{{ $division['minimum_shift'] }}</td>
                         <td class="text-center">{{ $division['shift'] === 0 ? 'Critical' : $division['shift'] }}</td>
                         <td class="text-center">{{ $formatNumber($division['total_mpp']) }}</td>
                     </tr>

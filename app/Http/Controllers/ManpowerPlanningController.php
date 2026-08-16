@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DeviceAvailability;
 use App\Models\ManpowerActivity;
+use App\Models\ManpowerDivisionRule;
 use App\Models\ManpowerPlanning;
 use App\Models\ManpowerVasSchedule;
 use App\Models\SystemSetting;
@@ -13,6 +14,7 @@ use App\Services\ManpowerPlanning\PlanningResult;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class ManpowerPlanningController extends Controller
 {
@@ -272,6 +274,62 @@ class ManpowerPlanningController extends Controller
         return back()->with('success', 'Device availability deleted.');
     }
 
+    public function divisionRules(Request $request)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        return view('administration.master.manpower-division-rules', [
+            'rows' => ManpowerDivisionRule::query()->orderBy('division')->get(),
+        ]);
+    }
+
+    public function storeDivisionRule(Request $request)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $data = $request->validate([
+            'division' => ['required', 'string', 'max:255', 'unique:manpower_division_rules,division'],
+            'minimum_shift' => ['required', 'integer', 'min:1', 'max:2'],
+            'reason' => ['nullable', 'string'],
+        ]);
+
+        ManpowerDivisionRule::query()->create($data);
+
+        return back()->with('success', 'Division rule saved.');
+    }
+
+    public function updateDivisionRule(Request $request, ManpowerDivisionRule $manpowerDivisionRule)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $data = $request->validate([
+            'division' => ['required', 'string', 'max:255', 'unique:manpower_division_rules,division,'.$manpowerDivisionRule->id],
+            'minimum_shift' => ['required', 'integer', 'min:1', 'max:2'],
+            'reason' => ['nullable', 'string'],
+        ]);
+
+        $manpowerDivisionRule->update($data);
+
+        return back()->with('success', 'Division rule updated.');
+    }
+
+    public function destroyDivisionRule(Request $request, ManpowerDivisionRule $manpowerDivisionRule)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $manpowerDivisionRule->delete();
+
+        return back()->with('success', 'Division rule deleted.');
+    }
+
     public function activities(Request $request)
     {
         if ($redirect = $this->ensureAdmin()) {
@@ -396,6 +454,9 @@ class ManpowerPlanningController extends Controller
                 'minimum_manpower' => $activity->minimum_manpower,
                 'available_manpower' => $activity->available_manpower,
                 'device_type' => $activity->device_type,
+                'allowed_shifts' => $activity->allowed_shifts,
+                'start_time' => $activity->start_time,
+                'end_time' => $activity->end_time,
             ])
             ->all();
 
@@ -406,6 +467,7 @@ class ManpowerPlanningController extends Controller
             effectiveHours: $effectiveHours,
             activities: $activities,
             devices: $this->resolveDevices(),
+            divisionRules: $this->resolveDivisionRules(),
         ));
     }
 
@@ -448,6 +510,7 @@ class ManpowerPlanningController extends Controller
 
             $planning->update($attributes);
             $planning->items()->delete();
+            $planning->devices()->delete();
         }
 
         $sort = 0;
@@ -455,6 +518,16 @@ class ManpowerPlanningController extends Controller
 
         foreach ($result->divisions as $division) {
             $bottlenecks = $division->bottlenecks;
+            $shift1ByCode = [];
+            $shift2ByCode = [];
+
+            foreach ($division->shift1 as $entry) {
+                $shift1ByCode[$entry->code] = $entry->mpp;
+            }
+
+            foreach ($division->shift2 as $entry) {
+                $shift2ByCode[$entry->code] = $entry->mpp;
+            }
 
             foreach ($division->activities as $activity) {
                 $items[] = [
@@ -468,13 +541,20 @@ class ManpowerPlanningController extends Controller
                     'productivity_unit' => $activity->productivityUnit,
                     'manpower_type' => $activity->manpowerType,
                     'device_type' => $activity->deviceType,
+                    'allowed_shifts' => implode(',', array_map(fn ($shift) => 'S'.$shift, $activity->allowedShifts)),
+                    'start_time' => $activity->startTime,
+                    'end_time' => $activity->endTime,
+                    'minimum_shift' => $division->minimumShift,
+                    'division_reason' => $division->reason,
                     'minimum_manpower' => $activity->minimumManpower,
                     'shift_duration' => $config['shift_duration'],
                     'non_productive_hours' => $config['non_productive_hours'],
                     'effective_working_hours' => $config['effective_hours'],
                     'required_mpp' => min($activity->requiredOneShift, 2147483647),
                     'mpp_per_shift' => min($activity->requiredTwoShifts, 2147483647),
-                    'number_of_shift' => $activity->recommendedShifts,
+                    'mpp_shift_1' => $shift1ByCode[$activity->code] ?? null,
+                    'mpp_shift_2' => $shift2ByCode[$activity->code] ?? null,
+                    'number_of_shift' => $division->recommendedShifts,
                     'available_mpp' => $activity->availableManpower,
                     'feasibility_status' => $activity->status,
                     'bottleneck' => in_array($activity->name, $bottlenecks, true),
@@ -512,10 +592,7 @@ class ManpowerPlanningController extends Controller
         $totalMpp = 0;
 
         foreach ($result->divisions as $division) {
-            $shifts = $division->recommendedShifts === 1 ? 1 : 2;
-            $perShift = $division->recommendedShifts === 1 ? $division->totalMppOneShift : $division->totalMppPerShift;
-
-            $totalMpp += $perShift * $shifts;
+            $totalMpp += $division->totalMpp;
         }
 
         $recommendation = match (true) {
@@ -548,16 +625,41 @@ class ManpowerPlanningController extends Controller
 
         foreach ($grouped as $division => $divisionItems) {
             $shift = 0;
-
-            foreach ($divisionItems as $item) {
-                $shift = max($shift, (int) $item->number_of_shift);
-            }
-
-            $perShift = 0;
+            $minimumShift = 1;
+            $reason = null;
+            $shift1 = [];
+            $shift2 = [];
+            $totalMpp = 0;
             $bottlenecks = [];
 
             foreach ($divisionItems as $item) {
-                $perShift += ($shift === 1 ? $item->required_mpp : $item->mpp_per_shift);
+                $shift = max($shift, (int) $item->number_of_shift);
+                $minimumShift = (int) $item->minimum_shift;
+                $reason = $item->division_reason;
+
+                if ($item->mpp_shift_1 !== null) {
+                    $shift1[] = [
+                        'name' => $item->name,
+                        'code' => $item->code,
+                        'mpp' => $item->mpp_shift_1,
+                        'device' => $item->device_type,
+                        'start_time' => $item->start_time,
+                        'end_time' => $item->end_time,
+                    ];
+                    $totalMpp += $item->mpp_shift_1;
+                }
+
+                if ($item->mpp_shift_2 !== null) {
+                    $shift2[] = [
+                        'name' => $item->name,
+                        'code' => $item->code,
+                        'mpp' => $item->mpp_shift_2,
+                        'device' => $item->device_type,
+                        'start_time' => $item->start_time,
+                        'end_time' => $item->end_time,
+                    ];
+                    $totalMpp += $item->mpp_shift_2;
+                }
 
                 if ($item->bottleneck) {
                     $bottlenecks[] = $item->name;
@@ -568,8 +670,11 @@ class ManpowerPlanningController extends Controller
                 'division' => $division,
                 'items' => $divisionItems,
                 'shift' => $shift,
-                'mpp_per_shift' => $perShift,
-                'total_mpp' => $shift === 1 ? $perShift : ($perShift * 2),
+                'minimum_shift' => $minimumShift,
+                'reason' => $reason,
+                'shift1' => $shift1,
+                'shift2' => $shift2,
+                'total_mpp' => $totalMpp,
                 'status' => $shift === 0 ? 'CRITICAL' : 'FEASIBLE',
                 'bottlenecks' => $bottlenecks,
             ];
@@ -619,6 +724,19 @@ class ManpowerPlanningController extends Controller
             ->all();
     }
 
+    /**
+     * @return array<string, array{minimum_shift: int, reason: string|null}>
+     */
+    private function resolveDivisionRules(): array
+    {
+        return ManpowerDivisionRule::query()
+            ->get()
+            ->mapWithKeys(fn (ManpowerDivisionRule $rule) => [
+                $rule->division => ['minimum_shift' => (int) $rule->minimum_shift, 'reason' => $rule->reason],
+            ])
+            ->all();
+    }
+
     private function generatePlanningNumber(string $date): string
     {
         $next = (ManpowerPlanning::max('id') ?? 0) + 1;
@@ -663,11 +781,17 @@ class ManpowerPlanningController extends Controller
             'minimum_manpower' => ['nullable', 'integer', 'min:0', 'required_if:manpower_type,Fixed'],
             'available_manpower' => ['required', 'integer', 'min:0'],
             'device_type' => ['nullable', 'string', 'max:50'],
+            'allowed_shifts' => ['nullable', Rule::in(['S1,S2', 'S1', 'S2'])],
+            'start_time' => ['nullable', 'date_format:H:i'],
+            'end_time' => ['nullable', 'date_format:H:i'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $data['minimum_manpower'] = $data['minimum_manpower'] ?? null;
         $data['device_type'] = ($data['device_type'] ?? '') ?: null;
+        $data['allowed_shifts'] = $data['allowed_shifts'] ?? 'S1,S2';
+        $data['start_time'] = $data['start_time'] ?? '07:00';
+        $data['end_time'] = $data['end_time'] ?? '23:00';
         $data['is_active'] = $request->boolean('is_active');
 
         return $data;

@@ -71,6 +71,13 @@
                     class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                 <input name="device_type" placeholder="Device (PC/RF, opsional)"
                     class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                <select name="allowed_shifts" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="S1,S2">S1 + S2</option>
+                    <option value="S1">S1 only</option>
+                    <option value="S2">S2 only</option>
+                </select>
+                <input name="start_time" type="time" value="07:00" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                <input name="end_time" type="time" value="23:00" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                 <input name="sort_order" type="number" min="0" placeholder="Sort Order"
                     class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                 <label class="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -92,6 +99,7 @@
                             <th class="px-3 py-2">Type</th>
                             <th class="px-3 py-2">Available</th>
                             <th class="px-3 py-2">Device</th>
+                            <th class="px-3 py-2">Window</th>
                             <th class="px-3 py-2">Action</th>
                         </tr>
                     </thead>
@@ -106,6 +114,7 @@
                                 <td class="px-3 py-2">{{ $row->manpower_type }}</td>
                                 <td class="px-3 py-2">{{ $row->available_manpower }}</td>
                                 <td class="px-3 py-2">{{ $row->device_type ?? '-' }}</td>
+                                <td class="px-3 py-2">{{ $row->allowed_shifts }} ({{ $row->start_time }}-{{ $row->end_time }})</td>
                                 <td class="px-3 py-2">
                                     <details>
                                         <summary class="cursor-pointer text-blue-700">Edit</summary>
@@ -136,6 +145,13 @@
                                             <input name="minimum_manpower" type="number" min="0" value="{{ $row->minimum_manpower ?? '' }}" placeholder="Min MPP" class="rounded border border-slate-300 px-2 py-1">
                                             <input name="available_manpower" type="number" min="0" value="{{ $row->available_manpower }}" class="rounded border border-slate-300 px-2 py-1">
                                             <input name="device_type" value="{{ $row->device_type }}" placeholder="Device (PC/RF)" class="rounded border border-slate-300 px-2 py-1">
+                                            <select name="allowed_shifts" class="rounded border border-slate-300 px-2 py-1">
+                                                @foreach (['S1,S2' => 'S1 + S2', 'S1' => 'S1 only', 'S2' => 'S2 only'] as $value => $label)
+                                                    <option value="{{ $value }}" @selected($row->allowed_shifts === $value)>{{ $label }}</option>
+                                                @endforeach
+                                            </select>
+                                            <input name="start_time" type="time" value="{{ $row->start_time }}" class="rounded border border-slate-300 px-2 py-1">
+                                            <input name="end_time" type="time" value="{{ $row->end_time }}" class="rounded border border-slate-300 px-2 py-1">
                                             <input name="sort_order" type="number" min="0" value="{{ $row->sort_order }}" class="rounded border border-slate-300 px-2 py-1">
                                             <label class="flex items-center gap-2 rounded border border-slate-300 px-2 py-1">
                                                 <input type="checkbox" name="is_active" value="1" @checked($row->is_active)>

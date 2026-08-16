@@ -98,8 +98,8 @@
                         </div>
                         <dl class="mt-3 grid grid-cols-3 gap-2 text-sm">
                             <div>
-                                <dt class="text-slate-500">MPP / Shift</dt>
-                                <dd class="font-semibold text-slate-900">{{ $formatNumber($division['mpp_per_shift']) }}</dd>
+                                <dt class="text-slate-500">Min Shift</dt>
+                                <dd class="font-semibold text-slate-900">{{ $division['minimum_shift'] }}</dd>
                             </div>
                             <div>
                                 <dt class="text-slate-500">Shift</dt>
@@ -110,12 +110,62 @@
                                 <dd class="font-semibold text-slate-900">{{ $formatNumber($division['total_mpp']) }}</dd>
                             </div>
                         </dl>
+                        @if ($division['reason'])
+                            <p class="mt-2 text-xs text-blue-700"><span class="font-semibold">Reason:</span> {{ $division['reason'] }}</p>
+                        @endif
                         @if (! empty($division['bottlenecks']))
                             <p class="mt-2 text-xs font-semibold text-amber-700">Bottleneck: {{ implode(', ', $division['bottlenecks']) }}</p>
                         @endif
                     </article>
                 @endforeach
             </div>
+
+            @php $hasShiftBreakdown = collect($divisions)->contains(fn($d) => ! empty($d['shift1']) || ! empty($d['shift2'])); @endphp
+            @if ($hasShiftBreakdown)
+                <div class="mt-6">
+                    <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Shift Breakdown</h3>
+                    @foreach ($divisions as $division)
+                        @if (! empty($division['shift1']))
+                            <p class="mt-3 text-sm font-semibold text-slate-700">Shift 1 &mdash; 07:00 &ndash; 15:00</p>
+                            <div class="mt-2 overflow-x-auto">
+                                <table class="wims-table min-w-full text-left text-sm">
+                                    <thead><tr><th>Division</th><th>Position</th><th>MPP</th><th>Device</th><th>Window</th></tr></thead>
+                                    <tbody>
+                                        @foreach ($division['shift1'] as $entry)
+                                            <tr>
+                                                <td>{{ $division['division'] }}</td>
+                                                <td class="font-semibold text-slate-900">{{ $entry['name'] }}</td>
+                                                <td>{{ $formatNumber($entry['mpp']) }}</td>
+                                                <td>{{ $entry['device'] ?? '-' }}</td>
+                                                <td>{{ $entry['start_time'] }}-{{ $entry['end_time'] }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @endif
+                        @if (! empty($division['shift2']))
+                            <p class="mt-3 text-sm font-semibold text-slate-700">Shift 2 &mdash; 15:00 &ndash; 23:00</p>
+                            <div class="mt-2 overflow-x-auto">
+                                <table class="wims-table min-w-full text-left text-sm">
+                                    <thead><tr><th>Division</th><th>Position</th><th>MPP</th><th>Device</th><th>Window</th></tr></thead>
+                                    <tbody>
+                                        @foreach ($division['shift2'] as $entry)
+                                            <tr>
+                                                <td>{{ $division['division'] }}</td>
+                                                <td class="font-semibold text-slate-900">{{ $entry['name'] }}</td>
+                                                <td>{{ $formatNumber($entry['mpp']) }}</td>
+                                                <td>{{ $entry['device'] ?? '-' }}</td>
+                                                <td>{{ $entry['start_time'] }}-{{ $entry['end_time'] }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @endif
+                    @endforeach
+                </div>
+            @endif
 
             @if ($planning->devices->isNotEmpty())
                 <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">

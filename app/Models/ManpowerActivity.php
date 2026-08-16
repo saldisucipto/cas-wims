@@ -22,6 +22,9 @@ class ManpowerActivity extends Model
         'minimum_manpower',
         'available_manpower',
         'device_type',
+        'allowed_shifts',
+        'start_time',
+        'end_time',
         'sort_order',
         'is_active',
     ];

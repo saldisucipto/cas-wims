@@ -42,7 +42,7 @@ function outboundActivities(): array
     ];
 }
 
-function runPlan(array $activities, int $inboundVolume = 0, int $outboundVolume = 0, int $vasVolume = 0, array $devices = []): PlanningResult
+function runPlan(array $activities, int $inboundVolume = 0, int $outboundVolume = 0, int $vasVolume = 0, array $devices = [], array $divisionRules = []): PlanningResult
 {
     return (new ManpowerPlanningEngine)->run(new PlanningInput(
         inboundVolume: $inboundVolume,
@@ -51,6 +51,7 @@ function runPlan(array $activities, int $inboundVolume = 0, int $outboundVolume 
         effectiveHours: 7,
         activities: $activities,
         devices: $devices,
+        divisionRules: $divisionRules,
     ));
 }
 
@@ -290,4 +291,74 @@ test('can have both manpower and device shortage', function () {
         ->and($result->deviceFeasible)->toBeFalse()
         ->and($result->manpowerBottlenecks)->toBe(['Checker'])
         ->and($result->deviceBottlenecks)->toBe(['PC']);
+});
+
+test('s2-only activity allocates full workload to shift 2 only', function () {
+    $result = runPlan([
+        mpActivity([
+            'division' => 'Outbound',
+            'name' => 'Dispatch',
+            'workload_source' => 'Outbound',
+            'workload_unit' => 'Order',
+            'productivity_per_hour' => 500,
+            'productivity_unit' => 'order/hour',
+            'available_manpower' => 30,
+            'device_type' => 'RF',
+            'allowed_shifts' => 'S2',
+            'start_time' => '15:00',
+            'end_time' => '23:00',
+        ]),
+    ], outboundVolume: 7000, devices: ['RF' => 24], divisionRules: ['Outbound' => ['minimum_shift' => 2, 'reason' => 'Operational requirement']]);
+
+    $outbound = $result->divisions['Outbound'];
+    $dispatch = findActivity($outbound->activities, 'Dispatch');
+
+    expect($dispatch->requiredOneShift)->toBe(2)
+        ->and($outbound->recommendedShifts)->toBe(2)
+        ->and($outbound->minimumShift)->toBe(2)
+        ->and($outbound->shift1)->toBe([])
+        ->and($outbound->shift2[0]->name)->toBe('Dispatch')
+        ->and($outbound->shift2[0]->mpp)->toBe(2);
+});
+
+test('division minimum shift rule forces 2 shifts regardless of workload', function () {
+    $result = runPlan([
+        mpActivity([
+            'division' => 'Outbound',
+            'name' => 'Picker',
+            'workload_source' => 'Outbound',
+            'workload_unit' => 'PCS',
+            'productivity_per_hour' => 150,
+            'productivity_unit' => 'pcs/hour',
+            'available_manpower' => 150,
+            'device_type' => 'RF',
+        ]),
+    ], outboundVolume: 100, devices: ['RF' => 24], divisionRules: ['Outbound' => ['minimum_shift' => 2, 'reason' => 'Operational requirement']]);
+
+    $outbound = $result->divisions['Outbound'];
+
+    expect($outbound->recommendedShifts)->toBe(2)
+        ->and($outbound->minimumShift)->toBe(2)
+        ->and($outbound->reason)->toBe('Operational requirement');
+});
+
+test('shared activity splits workload across both shifts', function () {
+    $result = runPlan([
+        mpActivity([
+            'division' => 'Outbound',
+            'name' => 'Picker',
+            'workload_source' => 'Outbound',
+            'workload_unit' => 'PCS',
+            'productivity_per_hour' => 100,
+            'productivity_unit' => 'pcs/hour',
+            'available_manpower' => 50,
+            'device_type' => 'RF',
+        ]),
+    ], outboundVolume: 28000, devices: ['RF' => 24], divisionRules: ['Outbound' => ['minimum_shift' => 2, 'reason' => null]]);
+
+    $outbound = $result->divisions['Outbound'];
+
+    expect($outbound->shift1[0]->mpp)->toBe(20)
+        ->and($outbound->shift2[0]->mpp)->toBe(20)
+        ->and($outbound->totalMpp)->toBe(40);
 });

@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             ManpowerActivitySeeder::class,
+            ManpowerDivisionRuleSeeder::class,
             DeviceAvailabilitySeeder::class,
             ManpowerVasScheduleSeeder::class,
             // UserSeeder::class,

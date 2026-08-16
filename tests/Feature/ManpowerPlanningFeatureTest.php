@@ -270,6 +270,42 @@ test('administrator can manage device availability', function () {
     ]);
 });
 
+test('updating a planning replaces the device snapshot without duplicates', function () {
+    $this->actingAs(User::factory()->create(['role' => 'Administrator']));
+    DeviceAvailability::query()->create(['device_type' => 'PC', 'ready_quantity' => 10]);
+
+    ManpowerActivity::query()->create([
+        'division' => 'Outbound',
+        'name' => 'Check-Pack',
+        'code' => 'OB-CHECKPACK',
+        'workload_source' => 'Outbound',
+        'workload_unit' => 'Order',
+        'conversion_ratio' => 1,
+        'productivity_per_hour' => 24,
+        'productivity_unit' => 'order/hour',
+        'manpower_type' => 'Variable',
+        'available_manpower' => 300,
+        'device_type' => 'PC',
+    ]);
+
+    $this->post(route('administration.manpower-planning.store'), [
+        'inbound_volume' => 0,
+        'outbound_volume' => 5000,
+        'planning_date' => '2026-08-16',
+    ]);
+
+    $planning = ManpowerPlanning::query()->first();
+    expect($planning->devices()->count())->toBe(1);
+
+    $this->post(route('administration.manpower-planning.update', $planning), [
+        'inbound_volume' => 0,
+        'outbound_volume' => 8000,
+        'planning_date' => '2026-08-16',
+    ]);
+
+    expect($planning->devices()->count())->toBe(1);
+});
+
 test('saved planning snapshot does not change when master productivity changes', function () {
     $this->actingAs(User::factory()->create(['role' => 'Administrator']));
     $activity = createUnloadingActivity();

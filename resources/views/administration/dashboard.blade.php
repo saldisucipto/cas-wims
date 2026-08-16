@@ -171,6 +171,10 @@
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.manpower-device-availabilities' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.master.manpower-device-availabilities' ? 'true' : 'false' }}">Device
                                     Availability</a></li>
+                            <li><a href="{{ route('administration.master.manpower-division-rules') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.manpower-division-rules' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.master.manpower-division-rules' ? 'true' : 'false' }}">Division
+                                    Rules</a></li>
                             <li><a href="{{ route('administration.master.system-users') }}"
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.system-users' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.master.system-users' ? 'true' : 'false' }}">System

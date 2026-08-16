@@ -17,9 +17,13 @@ final readonly class PlanningInput
      *     manpower_type: string,
      *     minimum_manpower: int|null,
      *     available_manpower: int,
-     *     device_type: string|null
+     *     device_type: string|null,
+     *     allowed_shifts: string,
+     *     start_time: string,
+     *     end_time: string
      * }>  $activities
      * @param  array<string, int>  $devices
+     * @param  array<string, array{minimum_shift: int, reason: string|null}>  $divisionRules
      */
     public function __construct(
         public int $inboundVolume,
@@ -28,5 +32,6 @@ final readonly class PlanningInput
         public float $effectiveHours,
         public array $activities,
         public array $devices = [],
+        public array $divisionRules = [],
     ) {}
 }
