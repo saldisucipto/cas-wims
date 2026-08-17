@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ConsumableRequest;
+use App\Models\ShiftDefinition;
 use App\Models\StockTransaction;
 use App\Models\SystemSetting;
 use App\Models\WorkingSession;
@@ -52,10 +53,16 @@ class SystemConfigController extends Controller
             return $redirect;
         }
 
-        $keys = ['morning_shift_start', 'morning_shift_end', 'night_shift_start', 'night_shift_end', 'shift_duration', 'non_productive_hours', 'effective_working_hours'];
+        $keys = [
+            'morning_shift_start', 'morning_shift_end', 'night_shift_start', 'night_shift_end',
+            'shift_duration', 'non_productive_hours', 'effective_working_hours', 'max_weekly_hours',
+            'bco_order_release_cutoff', 'bco_picking_cutoff', 'bco_packing_cutoff',
+            'bco_qc_cutoff', 'bco_ready_to_ship_cutoff', 'bco_expedition_handover_cutoff',
+        ];
 
         return view('administration.system.shift-settings', [
             'settings' => SystemSetting::query()->whereIn('setting_key', $keys)->pluck('setting_value', 'setting_key'),
+            'definitions' => ShiftDefinition::query()->orderBy('sort_order')->orderBy('code')->get(),
         ]);
     }
 
@@ -73,6 +80,13 @@ class SystemConfigController extends Controller
             'shift_duration' => ['required', 'numeric', 'min:1', 'max:24'],
             'non_productive_hours' => ['required', 'numeric', 'min:0', 'max:24'],
             'effective_working_hours' => ['required', 'numeric', 'min:1', 'max:24'],
+            'max_weekly_hours' => ['required', 'numeric', 'min:1', 'max:168'],
+            'bco_order_release_cutoff' => ['nullable', 'date_format:H:i'],
+            'bco_picking_cutoff' => ['nullable', 'date_format:H:i'],
+            'bco_packing_cutoff' => ['nullable', 'date_format:H:i'],
+            'bco_qc_cutoff' => ['nullable', 'date_format:H:i'],
+            'bco_ready_to_ship_cutoff' => ['nullable', 'date_format:H:i'],
+            'bco_expedition_handover_cutoff' => ['nullable', 'date_format:H:i'],
         ]);
 
         foreach ($data as $key => $value) {
@@ -83,6 +97,65 @@ class SystemConfigController extends Controller
         }
 
         return back()->with('success', 'Shift settings saved.');
+    }
+
+    public function saveShiftDefinitions(Request $request)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $data = $request->validate([
+            'start_time' => ['required', 'array'],
+            'start_time.*' => ['required', 'date_format:H:i'],
+            'end_time' => ['required', 'array'],
+            'end_time.*' => ['required', 'date_format:H:i'],
+            'break_start' => ['nullable', 'array'],
+            'break_start.*' => ['nullable', 'date_format:H:i'],
+            'break_end' => ['nullable', 'array'],
+            'break_end.*' => ['nullable', 'date_format:H:i'],
+        ]);
+
+        foreach ($data['start_time'] as $id => $startTime) {
+            $definition = ShiftDefinition::query()->find($id);
+
+            if (! $definition) {
+                continue;
+            }
+
+            $endTime = $data['end_time'][$id];
+            $breakStart = $data['break_start'][$id] ?? null;
+            $breakEnd = $data['break_end'][$id] ?? null;
+
+            $startMinutes = $this->minutesOfDay($startTime);
+            $endMinutes = $this->minutesOfDay($endTime);
+            $breakStartMinutes = $breakStart ? $this->minutesOfDay($breakStart) : null;
+            $breakEndMinutes = $breakEnd ? $this->minutesOfDay($breakEnd) : null;
+
+            $breakMinutes = ($breakStartMinutes !== null && $breakEndMinutes !== null)
+                ? max(0, $breakEndMinutes - $breakStartMinutes)
+                : 0;
+
+            $effectiveHours = max(0, round(($endMinutes - $startMinutes - $breakMinutes) / 60, 2));
+
+            $definition->update([
+                'start_time' => $startTime,
+                'end_time' => $endTime,
+                'break_start' => $breakStart ?: null,
+                'break_end' => $breakEnd ?: null,
+                'break_minutes' => $breakMinutes,
+                'effective_hours' => $effectiveHours,
+            ]);
+        }
+
+        return back()->with('success', 'Shift definitions saved.');
+    }
+
+    private function minutesOfDay(string $time): int
+    {
+        [$hour, $minute] = array_map('intval', explode(':', $time));
+
+        return $hour * 60 + $minute;
     }
 
     public function activityLogs()

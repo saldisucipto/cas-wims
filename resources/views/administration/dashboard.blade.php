@@ -175,6 +175,16 @@
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.manpower-division-rules' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.master.manpower-division-rules' ? 'true' : 'false' }}">Division
                                     Rules</a></li>
+                            <li><a href="{{ route('administration.master.employees') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.employees' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.master.employees' ? 'true' : 'false' }}">Core
+                                    Employees</a></li>
+                            <li><a href="{{ route('administration.master.divisions') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.divisions' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.master.divisions' ? 'true' : 'false' }}">Divisions</a></li>
+                            <li><a href="{{ route('administration.master.positions') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.positions' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.master.positions' ? 'true' : 'false' }}">Positions</a></li>
                             <li><a href="{{ route('administration.master.system-users') }}"
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.master.system-users' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.master.system-users' ? 'true' : 'false' }}">System
@@ -239,6 +249,14 @@
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.manpower-planning' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.manpower-planning' ? 'true' : 'false' }}">Manpower
                                     Planning</a></li>
+                            <li><a href="{{ route('administration.shift-schedules') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.shift-schedules' || $currentRoute === 'administration.shift-schedules.create' || $currentRoute === 'administration.shift-schedules.show' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.shift-schedules' ? 'true' : 'false' }}">Shift
+                                    Schedules</a></li>
+                            <li><a href="{{ route('administration.packing-productivity') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ \Illuminate\Support\Str::startsWith($currentRoute, 'administration.packing-productivity') ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.packing-productivity' ? 'true' : 'false' }}">Packing
+                                    Productivity</a></li>
                             <li><a href="{{ route('administration.manpower-planning.history') }}"
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.manpower-planning.history' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.manpower-planning.history' ? 'true' : 'false' }}">Planning
