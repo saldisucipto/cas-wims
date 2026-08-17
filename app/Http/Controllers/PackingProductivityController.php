@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DailyWorker;
 use App\Models\MesonImportBatch;
 use App\Models\MesonTransaction;
 use App\Models\WmsAccount;
@@ -24,13 +25,14 @@ class PackingProductivityController extends Controller
             return $redirect;
         }
 
-        $filters = $request->only(['start_date', 'end_date', 'warehouse_id', 'operator_id', 'function', 'transaction_type', 'status']);
+        $filters = $request->only(['start_date', 'end_date', 'warehouse_id', 'operator_id', 'daily_worker_id', 'function', 'transaction_type', 'status']);
 
         return view('administration.packing-productivity.index', [
             'data' => $this->service->dashboard($filters),
             'filters' => $filters,
             'lastBatch' => MesonImportBatch::query()->with('importer')->latest()->first(),
             'operators' => WmsAccount::query()->with('dailyWorker')->where('status', '!=', 'Disabled')->orderBy('username')->get(),
+            'dailyWorkers' => DailyWorker::query()->where('is_active', true)->orderBy('name')->get(),
             'warehouses' => MesonTransaction::query()->distinct()->whereNotNull('warehouse_id')->pluck('warehouse_id')->filter()->sort()->values(),
             'functions' => WmsAccount::query()->distinct()->whereNotNull('function')->pluck('function')->filter()->sort()->values(),
             'types' => MesonTransaction::query()->distinct()->whereNotNull('transaction_type')->pluck('transaction_type')->filter()->sort()->values(),

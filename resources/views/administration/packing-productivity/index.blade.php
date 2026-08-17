@@ -45,8 +45,8 @@
                     <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['total_items']) }}</p>
                 </article>
                 <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p class="text-sm text-slate-500">Total Operators</p>
-                    <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['total_operators']) }}</p>
+                    <p class="text-sm text-slate-500">Total Workers</p>
+                    <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['total_workers']) }}</p>
                 </article>
                 <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p class="text-sm text-slate-500">Avg Orders / Hour</p>
@@ -73,6 +73,12 @@
                         <option value="{{ $operator->id }}" @selected((string) ($filters['operator_id'] ?? '') === (string) $operator->id)>{{ $operator->username }}</option>
                     @endforeach
                 </select>
+                <select name="daily_worker_id" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="">All Workers</option>
+                    @foreach ($dailyWorkers as $worker)
+                        <option value="{{ $worker->id }}" @selected((string) ($filters['daily_worker_id'] ?? '') === (string) $worker->id)>{{ $worker->name }}</option>
+                    @endforeach
+                </select>
                 <select name="function" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                     <option value="">All Functions</option>
                     @foreach ($functions as $function)
@@ -94,34 +100,40 @@
                 <button class="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white">Apply Filters</button>
             </form>
 
-            @if (! empty($filters['operator_id']))
+            @if (! empty($filters['daily_worker_id']) || ! empty($filters['operator_id']))
                 @php
-                    $selectedOperator = $operators->firstWhere('id', (int) $filters['operator_id']);
-                    $clearOperatorLink = route('administration.packing-productivity', array_filter(array_diff_key($filters, ['operator_id' => true])));
+                    $selectedWorker = ! empty($filters['daily_worker_id']) ? $dailyWorkers->firstWhere('id', (int) $filters['daily_worker_id']) : null;
+                    $selectedOperator = ! empty($filters['operator_id']) ? $operators->firstWhere('id', (int) $filters['operator_id']) : null;
+                    $filterLabel = $selectedWorker?->name ?? $selectedOperator?->username ?? '-';
+                    $clearFilterLink = route('administration.packing-productivity', array_filter(array_diff_key($filters, ['daily_worker_id' => true, 'operator_id' => true])));
                 @endphp
                 <div class="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                    Menampilkan: <span class="font-semibold">{{ $selectedOperator?->dailyWorker?->name ?? $selectedOperator?->username ?? '-' }}</span>
-                    <a href="{{ $clearOperatorLink }}" class="ml-2 font-semibold underline">Clear filter</a>
+                    Menampilkan: <span class="font-semibold">{{ $filterLabel }}</span>
+                    <a href="{{ $clearFilterLink }}" class="ml-2 font-semibold underline">Clear filter</a>
                 </div>
             @endif
 
             <div class="mt-6">
-                <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Productivity per Operator</h3>
+                <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Productivity per Worker</h3>
                 <div class="mt-2 overflow-x-auto">
                     <table class="wims-table min-w-full text-left text-sm">
                         <thead>
                             <tr>
-                                <th>Worker / Operator</th><th>Function</th><th>Orders</th><th>SKU Lines</th><th>Items</th>
+                                <th>Worker</th><th>Function</th><th>Orders</th><th>SKU Lines</th><th>Items</th>
                                 <th>Orders/Hr</th><th>Items/Hr</th><th>Est. Active Hrs</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @forelse ($data['per_operator'] as $row)
+                            @forelse ($data['per_worker'] as $row)
+                                @php
+                                    $workerLink = $row['daily_worker_id']
+                                        ? route('administration.packing-productivity', array_merge(array_filter($filters), ['daily_worker_id' => $row['daily_worker_id']]))
+                                        : route('administration.packing-productivity', array_merge(array_filter($filters), ['operator_id' => $row['operator_id']]));
+                                @endphp
                                 <tr>
                                     <td>
-                                        <a href="{{ route('administration.packing-productivity', array_merge(array_filter($filters), ['operator_id' => $row['operator_id']])) }}"
-                                            class="font-semibold text-blue-700 hover:underline">{{ $row['daily_worker_name'] ?? $row['username'] }}</a>
-                                        @if ($row['daily_worker_name'])
+                                        <a href="{{ $workerLink }}" class="font-semibold text-blue-700 hover:underline">{{ $row['name'] }}</a>
+                                        @if ($row['username'] && $row['name'] !== $row['username'])
                                             <div class="text-xs text-slate-500">{{ $row['username'] }}</div>
                                         @endif
                                     </td>

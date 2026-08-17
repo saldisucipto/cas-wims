@@ -5,6 +5,7 @@ use App\Models\MesonImportBatch;
 use App\Models\MesonTransaction;
 use App\Models\User;
 use App\Models\WmsAccount;
+use App\Models\WorkingSession;
 use App\Services\PackingProductivity\PackingProductivityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -144,7 +145,7 @@ test('import replaces only the selected period and calculates productivity', fun
         ->and($data['summary']['total_lines'])->toBe(3)
         ->and($data['summary']['total_items'])->toBe(8.0)
         ->and($data['summary']['total_operators'])->toBe(2)
-        ->and($data['per_operator'])->toHaveCount(2);
+        ->and($data['per_worker'])->toHaveCount(2);
 });
 
 test('invalid operator is flagged and listed in preview', function () {
@@ -216,7 +217,7 @@ test('scheduled hours excludes sunday and uses configurable hours per day', func
     expect($service->scheduledHours(\Carbon\Carbon::parse('2026-08-17'), \Carbon\Carbon::parse('2026-08-22')))->toBe(42.0);
 });
 
-test('report shows the linked daily worker name', function () {
+test('import resolves the daily worker from the working session', function () {
     $this->actingAs(User::factory()->create(['role' => 'Administrator']));
 
     $worker = DailyWorker::query()->create([
@@ -230,16 +231,29 @@ test('report shows the linked daily worker name', function () {
     ]);
 
     $op = seedPackingOperator('CA1OPS008');
-    $op->update(['daily_worker_id' => $worker->id]);
 
-    MesonTransaction::query()->create([
-        'transaction_id' => 'T1', 'transaction_type' => 'Picking&Packing', 'document_number' => 'DOC-A',
-        'transaction_time' => '2026-08-15 08:30:00', 'qty_each_fm' => 3, 'operator_id' => $op->id, 'operator_username' => 'CA1OPS008',
+    WorkingSession::query()->create([
+        'daily_worker_id' => $worker->id,
+        'wms_account_id' => $op->id,
+        'session_type' => 'Packing',
+        'status' => 'Completed',
+        'started_at' => '2026-08-15 08:00:00',
+        'ended_at' => '2026-08-15 16:00:00',
     ]);
 
-    $data = app(PackingProductivityService::class)->dashboard(['start_date' => '2026-08-15', 'end_date' => '2026-08-15']);
+    $file = UploadedFile::fake()->createWithContent('meson.xlsx', buildMesonProductivityWorkbook([
+        mesonRow('WH1', 'T1', 'Picking&Packing', 'DOC-A', '2026-08-15 08:30:00', 'SKU1', '3', 'CA1OPS008'),
+    ]));
 
-    expect($data['per_operator'][0]['daily_worker_name'])->toBe('Andi Pratama');
+    $this->post(route('administration.packing-productivity.upload'), [
+        'start_date' => '2026-08-15', 'end_date' => '2026-08-15', 'file' => $file,
+    ])->assertRedirect();
+    $this->post(route('administration.packing-productivity.confirm'));
+
+    $this->assertDatabaseHas('meson_transactions', ['transaction_id' => 'T1', 'daily_worker_id' => $worker->id]);
+
+    $data = app(PackingProductivityService::class)->dashboard(['start_date' => '2026-08-15', 'end_date' => '2026-08-15']);
+    expect($data['per_worker'][0]['name'])->toBe('Andi Pratama');
 
     $this->get(route('administration.packing-productivity'))
         ->assertOk()

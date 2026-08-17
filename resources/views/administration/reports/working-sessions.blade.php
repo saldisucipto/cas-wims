@@ -78,22 +78,35 @@
                                     @endif
                                 </td>
                                 <td>
-                                    @if ($canForceClose && $row->status === 'Working')
-                                        <form method="POST"
-                                            action="{{ route('administration.reports.working-sessions.force-close', $row) }}"
-                                            class="force-close-form inline-block"
-                                            data-worker="{{ $row->dailyWorker?->name ?? '-' }}"
-                                            data-resource="{{ $row->rfDevice?->code ?? ($row->packingStation?->name ?? '-') }}">
-                                            @csrf
-                                            <button type="submit"
-                                                class="inline-flex items-center gap-2 rounded-lg border border-red-600 bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
-                                                <span aria-hidden="true">⏻</span>
-                                                <span>Force Close</span>
-                                            </button>
-                                        </form>
-                                    @else
-                                        <span class="text-slate-400">-</span>
-                                    @endif
+                                    <div class="flex flex-col items-start gap-1.5">
+                                        @php
+                                            $detailParams = [
+                                                'start_date' => $row->started_at?->toDateString(),
+                                                'end_date' => $row->started_at?->toDateString(),
+                                            ];
+                                            if ($row->daily_worker_id) {
+                                                $detailParams['daily_worker_id'] = $row->daily_worker_id;
+                                            } elseif ($row->wms_account_id) {
+                                                $detailParams['operator_id'] = $row->wms_account_id;
+                                            }
+                                        @endphp
+                                        <a href="{{ route('administration.packing-productivity', array_filter($detailParams)) }}"
+                                            class="inline-flex items-center justify-center rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">Detail</a>
+                                        @if ($canForceClose && $row->status === 'Working')
+                                            <form method="POST"
+                                                action="{{ route('administration.reports.working-sessions.force-close', $row) }}"
+                                                class="force-close-form inline-block"
+                                                data-worker="{{ $row->dailyWorker?->name ?? '-' }}"
+                                                data-resource="{{ $row->rfDevice?->code ?? ($row->packingStation?->name ?? '-') }}">
+                                                @csrf
+                                                <button type="submit"
+                                                    class="inline-flex items-center gap-2 rounded-lg border border-red-600 bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
+                                                    <span aria-hidden="true">⏻</span>
+                                                    <span>Force Close</span>
+                                                </button>
+                                            </form>
+                                        @endif
+                                    </div>
                                 </td>
                             </tr>
                         @empty

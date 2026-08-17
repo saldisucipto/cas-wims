@@ -48,6 +48,7 @@ class MesonTransaction extends Model
         'operator_id',
         'operator_username',
         'system_operator',
+        'daily_worker_id',
     ];
 
     protected function casts(): array
@@ -69,5 +70,10 @@ class MesonTransaction extends Model
     public function operator()
     {
         return $this->belongsTo(WmsAccount::class, 'operator_id');
+    }
+
+    public function dailyWorker()
+    {
+        return $this->belongsTo(DailyWorker::class, 'daily_worker_id');
     }
 }

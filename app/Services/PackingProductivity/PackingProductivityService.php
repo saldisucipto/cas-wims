@@ -6,6 +6,7 @@ use App\Models\MesonImportBatch;
 use App\Models\MesonTransaction;
 use App\Models\SystemSetting;
 use App\Models\WmsAccount;
+use App\Models\WorkingSession;
 use App\Services\Import\SpreadsheetReader;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -170,7 +171,7 @@ class PackingProductivityService
 
         return [
             'summary' => $this->summarize($rows, $scheduledHours),
-            'per_operator' => $this->aggregateByOperator($rows, $scheduledHours),
+            'per_worker' => $this->aggregateByWorker($rows, $scheduledHours),
             'hourly' => $this->aggregateByHour($rows),
             'daily' => $this->aggregateByDay($rows),
         ];
@@ -273,9 +274,18 @@ class PackingProductivityService
             ];
         }
 
-        $operatorMap = WmsAccount::query()
-            ->whereIn('username', array_values(array_unique(array_filter($operators))))
-            ->pluck('id', 'username');
+        $uniqueOperators = array_values(array_unique(array_filter($operators)));
+        $wmsAccounts = WmsAccount::query()->whereIn('username', $uniqueOperators)->get();
+        $operatorMap = $wmsAccounts->pluck('id', 'username');
+        $fallbackWorkerByOperatorId = $wmsAccounts->pluck('daily_worker_id', 'id');
+
+        // Preload working sessions for the valid operators, so the person (daily worker)
+        // can be resolved per transaction from the actual session, not a static account link.
+        $sessionsByOperator = WorkingSession::query()
+            ->whereIn('wms_account_id', $operatorMap->values()->filter()->all())
+            ->whereBetween('started_at', [$startTs->copy()->subDay(), $endTs->copy()->addDay()])
+            ->get(['id', 'daily_worker_id', 'wms_account_id', 'started_at', 'ended_at'])
+            ->groupBy('wms_account_id');
 
         $seen = [];
         $duplicateRows = 0;
@@ -308,7 +318,14 @@ class PackingProductivityService
                 $validOperatorRows++;
             }
 
-            $insertRows[] = $this->toAttributes($entry['row'], $entry['time'], $operatorId, $operator);
+            $dailyWorkerId = $this->resolveDailyWorker(
+                $operatorId,
+                $entry['time'],
+                $sessionsByOperator->get($operatorId, collect()),
+                $fallbackWorkerByOperatorId[$operatorId] ?? null,
+            );
+
+            $insertRows[] = $this->toAttributes($entry['row'], $entry['time'], $operatorId, $operator, $dailyWorkerId);
         }
 
         return [
@@ -378,7 +395,7 @@ class PackingProductivityService
      * @param  array<string, string|null>  $row
      * @return array<string, mixed>
      */
-    private function toAttributes(array $row, Carbon $time, ?int $operatorId, string $operator): array
+    private function toAttributes(array $row, Carbon $time, ?int $operatorId, string $operator, ?int $dailyWorkerId): array
     {
         $now = now();
 
@@ -387,6 +404,7 @@ class PackingProductivityService
             'system_time' => $this->parseTransactionTime($row['system_time'] ?? null),
             'operator_id' => $operatorId,
             'operator_username' => $operator !== '' ? $operator : null,
+            'daily_worker_id' => $dailyWorkerId,
             'created_at' => $now,
             'updated_at' => $now,
         ];
@@ -406,6 +424,36 @@ class PackingProductivityService
         }
 
         return $attributes;
+    }
+
+    /**
+     * Resolve the daily worker (person) who performed a transaction from the working
+     * session that bound the operator account to a person on that date/shift.
+     *
+     * @param  Collection<int, WorkingSession>  $sessions
+     */
+    private function resolveDailyWorker(?int $operatorId, Carbon $time, Collection $sessions, ?int $fallbackWorkerId): ?int
+    {
+        if ($operatorId === null) {
+            return null;
+        }
+
+        foreach ($sessions as $session) {
+            $start = $session->started_at;
+            $end = $session->ended_at ?? $time->copy()->endOfDay();
+
+            if ($start && $time->between($start, $end)) {
+                return $session->daily_worker_id;
+            }
+        }
+
+        foreach ($sessions as $session) {
+            if ($session->started_at?->toDateString() === $time->toDateString()) {
+                return $session->daily_worker_id;
+            }
+        }
+
+        return $fallbackWorkerId;
     }
 
     private function existingPeriodCount(Carbon $start, Carbon $end): int
@@ -452,7 +500,7 @@ class PackingProductivityService
      */
     private function queryRows(array $filters): Collection
     {
-        $query = MesonTransaction::query()->with('operator.dailyWorker');
+        $query = MesonTransaction::query()->with(['operator', 'dailyWorker']);
 
         if (! empty($filters['start_date'])) {
             $query->where('transaction_time', '>=', Carbon::parse($filters['start_date'])->startOfDay());
@@ -468,6 +516,10 @@ class PackingProductivityService
 
         if (! empty($filters['operator_id'])) {
             $query->where('operator_id', $filters['operator_id']);
+        }
+
+        if (! empty($filters['daily_worker_id'])) {
+            $query->where('daily_worker_id', $filters['daily_worker_id']);
         }
 
         if (! empty($filters['function'])) {
@@ -495,12 +547,14 @@ class PackingProductivityService
         $lines = $rows->count();
         $items = $rows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0);
         $operators = $rows->pluck('operator_id')->filter()->unique()->count();
+        $workers = $rows->pluck('daily_worker_id')->filter()->unique()->count();
 
         return [
             'total_orders' => $orders,
             'total_lines' => $lines,
             'total_items' => (float) $items,
             'total_operators' => $operators,
+            'total_workers' => $workers ?: $operators,
             'scheduled_hours' => $scheduledHours,
             'orders_per_hour' => $this->rate($orders, $scheduledHours),
             'lines_per_hour' => $this->rate($lines, $scheduledHours),
@@ -512,26 +566,26 @@ class PackingProductivityService
      * @param  Collection<int, MesonTransaction>  $rows
      * @return array<int, array<string, mixed>>
      */
-    private function aggregateByOperator(Collection $rows, float $scheduledHours): array
+    private function aggregateByWorker(Collection $rows, float $scheduledHours): array
     {
         $threshold = $this->inactivityThresholdMinutes();
         $result = [];
 
-        foreach ($rows->groupBy('operator_id') as $operatorId => $operatorRows) {
-            if ($operatorId === null || $operatorId === '') {
-                continue;
-            }
+        foreach ($rows->groupBy(fn (MesonTransaction $row) => $row->daily_worker_id ?? 'op:'.$row->operator_id) as $workerRows) {
+            $first = $workerRows->first();
+            $dailyWorker = $first->dailyWorker;
+            $operator = $first->operator;
 
-            $orders = $operatorRows->pluck('document_number')->filter()->unique()->count();
-            $lines = $operatorRows->count();
-            $items = $operatorRows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0);
-            $activeMinutes = $this->estimatedActiveMinutes($operatorRows->pluck('transaction_time'), $threshold);
-            $operator = $operatorRows->first()->operator;
+            $orders = $workerRows->pluck('document_number')->filter()->unique()->count();
+            $lines = $workerRows->count();
+            $items = $workerRows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0);
+            $activeMinutes = $this->estimatedActiveMinutes($workerRows->pluck('transaction_time'), $threshold);
 
             $result[] = [
-                'operator_id' => $operatorId,
-                'username' => $operator?->username ?? '?',
-                'daily_worker_name' => $operator?->dailyWorker?->name,
+                'daily_worker_id' => $first->daily_worker_id,
+                'operator_id' => $first->operator_id,
+                'name' => $dailyWorker?->name ?? $operator?->username ?? 'Unknown',
+                'username' => $operator?->username,
                 'function' => $operator?->function ?? '-',
                 'orders' => $orders,
                 'lines' => $lines,
