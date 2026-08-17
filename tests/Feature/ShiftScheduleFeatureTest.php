@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\DeviceAvailability;
 use App\Models\Employee;
+use App\Models\Position;
 use App\Models\ShiftDefinition;
 use App\Models\ShiftSchedule;
 use App\Models\User;
@@ -239,6 +241,34 @@ test('weekly hour excess with override is a warning but not a blocking error', f
     expect($validation['working_hours_valid'])->toBeTrue()
         ->and($validation['weekly_violations'])->not->toBeEmpty()
         ->and($validation['exceeding_weekly'][0]['overridden'])->toBeTrue();
+});
+
+test('device coverage counts unique employees per shift', function () {
+    seedCalendar();
+    seedShiftDefinitions();
+    $this->actingAs(User::factory()->create(['role' => 'Administrator']));
+
+    DeviceAvailability::query()->create(['device_type' => 'PC', 'ready_quantity' => 1]);
+
+    $position = Position::query()->create([
+        'code' => 'PICKER', 'name' => 'Picker', 'device_type' => 'PC', 'allowed_shifts' => 'S1,S2',
+        'start_time' => '08:00', 'end_time' => '22:00',
+    ]);
+
+    Employee::query()->create(['employee_code' => 'EMP-001', 'employee_name' => 'A', 'position_id' => $position->id, 'shift_pattern' => 'FIXED_S1', 'employment_start_date' => '2024-01-01', 'status' => 'ACTIVE']);
+    Employee::query()->create(['employee_code' => 'EMP-002', 'employee_name' => 'B', 'position_id' => $position->id, 'shift_pattern' => 'FIXED_S1', 'employment_start_date' => '2024-01-01', 'status' => 'ACTIVE']);
+
+    $this->post(route('administration.shift-schedules.store'), ['month' => 8, 'year' => 2026]);
+
+    $schedule = ShiftSchedule::query()->first();
+    $validation = (new ShiftScheduleService)->validate($schedule);
+
+    $pc = collect($validation['devices'])->first(fn ($row) => $row['device'] === 'PC' && $row['shift'] === 'S1');
+
+    expect($pc['required'])->toBe(2)
+        ->and($pc['ready'])->toBe(1)
+        ->and($pc['shortage'])->toBe(1)
+        ->and($pc['status'])->toBe('SHORTAGE');
 });
 
 test('rotating employees alternate shift weekly', function () {

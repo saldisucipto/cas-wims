@@ -309,11 +309,12 @@
                     <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Device Coverage</h3>
                     <div class="mt-2 overflow-x-auto">
                         <table class="wims-table min-w-full text-left text-sm">
-                            <thead><tr><th>Device</th><th>Required</th><th>Ready</th><th>Shortage</th><th>Status</th></tr></thead>
+                            <thead><tr><th>Device</th><th>Shift</th><th>Required</th><th>Ready</th><th>Shortage</th><th>Status</th></tr></thead>
                             <tbody>
                                 @foreach ($validation['devices'] as $row)
                                     <tr>
                                         <td class="font-semibold">{{ $row['device'] }}</td>
+                                        <td>{{ $row['shift'] }}</td>
                                         <td>{{ $row['required'] }}</td>
                                         <td>{{ $row['ready'] }}</td>
                                         <td>{{ $row['shortage'] }}</td>

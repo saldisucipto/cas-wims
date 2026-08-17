@@ -67,6 +67,22 @@
         <div class="section-title">Working Calendar</div>
         <p>Monday-Friday: Shift 1 (08:00-16:00) / Shift 2 (14:00-22:00), 7h effective &middot; Saturday: Short Shift 5h &middot; Sunday: OFF &middot; Max Weekly: 40h</p>
 
+        <div class="section-title">Shift Schedule &middot; Saturday Short Shift</div>
+        <table class="doc-table">
+            <thead><tr><th>Shift</th><th>Working Time</th><th>Break</th><th>Effective Hours</th></tr></thead>
+            <tbody>
+                @foreach ($definitions as $def)
+                    <tr>
+                        <td style="text-align:left;">{{ $def->name }}@if ($def->is_short_day) (Short)@endif</td>
+                        <td>{{ $def->start_time }} - {{ $def->end_time }}</td>
+                        <td>{{ ($def->break_start && $def->break_end) ? $def->break_start.' - '.$def->break_end : '-' }}</td>
+                        <td>{{ $def->effective_hours }}h</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+        <p style="margin:4px 0 0;">Sabtu adalah Short Working Day (maksimal 5 jam efektif) agar total mingguan tidak melebihi 40 jam: Senin-Jumat 7h &times; 5 = 35h + Sabtu 5h = 40h.</p>
+
         <div class="section-title">Daily Employee Schedule</div>
         <p style="margin: 4px 0 8px;">S1 = Shift 1 &middot; S2 = Shift 2 &middot; S1_SAT = Saturday Short Shift 1 &middot; S2_SAT = Saturday Short Shift 2 &middot; OFF = Off &middot; LEAVE = Leave &middot; SICK = Sick &middot; PERMISSION = Permission</p>
         <table class="doc-table">
@@ -100,33 +116,6 @@
                 <tbody>
                     @foreach ($validation['coverage'] as $row)
                         <tr><td>{{ $row['position'] }}</td><td>{{ $row['shift'] }}</td><td>{{ $row['required'] }}</td><td>{{ $row['core'] }}</td><td>{{ $row['gap'] }}</td><td>{{ $row['coverage'] }}%</td></tr>
-                    @endforeach
-                </tbody>
-            </table>
-        @endif
-
-        @if (! empty($validation['devices']))
-            <div class="section-title">Device Coverage</div>
-            <table class="doc-table">
-                <thead><tr><th>Device</th><th>Required</th><th>Ready</th><th>Shortage</th><th>Status</th></tr></thead>
-                <tbody>
-                    @foreach ($validation['devices'] as $row)
-                        <tr><td>{{ $row['device'] }}</td><td>{{ $row['required'] }}</td><td>{{ $row['ready'] }}</td><td>{{ $row['shortage'] }}</td><td>{{ $row['status'] }}</td></tr>
-                    @endforeach
-                </tbody>
-            </table>
-        @endif
-
-        @if (! empty($validation['weekly_hours']))
-            <div class="section-title">Weekly Working Hours</div>
-            <table class="doc-table">
-                <thead><tr><th>Employee</th>@for ($w = 1; $w <= 5; $w++) <th>W{{ $w }}</th> @endfor</tr></thead>
-                <tbody>
-                    @foreach ($validation['weekly_hours'] as $code => $weeksHours)
-                        <tr>
-                            <td style="text-align:left;">{{ $code }}</td>
-                            @for ($w = 1; $w <= 5; $w++) <td>{{ $weeksHours[$w] ?? 0 }}h</td> @endfor
-                        </tr>
                     @endforeach
                 </tbody>
             </table>

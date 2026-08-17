@@ -408,24 +408,28 @@ class ShiftScheduleService
                 continue;
             }
 
-            $band = str_ends_with($detail->shift, '_SAT') ? substr($detail->shift, 0, 2) : $detail->shift;
-            $deviceShift[$device][$band] = ($deviceShift[$device][$band] ?? 0) + 1;
+            // Count unique employees per shift, not every day-row.
+            $deviceShift[$device][$detail->shift][$detail->employee_id] = true;
         }
 
         $rows = [];
 
         foreach ($deviceShift as $device => $shifts) {
-            $required = max($shifts[self::SHIFT_S1] ?? 0, $shifts[self::SHIFT_S2] ?? 0);
             $ready = (int) (DeviceAvailability::query()->where('device_type', $device)->value('ready_quantity') ?? 0);
-            $shortage = max(0, $required - $ready);
 
-            $rows[] = [
-                'device' => $device,
-                'required' => $required,
-                'ready' => $ready,
-                'shortage' => $shortage,
-                'status' => $shortage > 0 ? 'SHORTAGE' : 'FEASIBLE',
-            ];
+            foreach ($shifts as $shift => $employeeIds) {
+                $required = count($employeeIds);
+                $shortage = max(0, $required - $ready);
+
+                $rows[] = [
+                    'device' => $device,
+                    'shift' => $shift,
+                    'required' => $required,
+                    'ready' => $ready,
+                    'shortage' => $shortage,
+                    'status' => $shortage > 0 ? 'SHORTAGE' : 'FEASIBLE',
+                ];
+            }
         }
 
         return $rows;

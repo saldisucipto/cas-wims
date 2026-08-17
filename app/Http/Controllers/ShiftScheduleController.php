@@ -165,6 +165,7 @@ class ShiftScheduleController extends Controller
             'schedule' => $shiftSchedule,
             'employees' => $shiftSchedule->details->unique('employee_id')->sortBy(fn ($d) => $d->employee?->employee_code ?? ''),
             'validation' => $this->service->validate($shiftSchedule),
+            'definitions' => $this->service->definitions(),
         ]);
     }
 
