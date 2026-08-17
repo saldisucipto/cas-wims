@@ -9,7 +9,7 @@ class DivisionSeeder extends Seeder
 {
     public function run(): void
     {
-        foreach ([['code' => 'INB', 'name' => 'Inbound'], ['code' => 'OB', 'name' => 'Outbound']] as $row) {
+        foreach ([['code' => 'INB', 'name' => 'Inbound'], ['code' => 'OB', 'name' => 'Outbound'], ['code' => 'LD', 'name' => 'Leaders']] as $row) {
             Division::query()->updateOrCreate(['code' => $row['code']], $row);
         }
     }
