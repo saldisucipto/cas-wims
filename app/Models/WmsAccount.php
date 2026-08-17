@@ -11,7 +11,13 @@ class WmsAccount extends Model
         'password',
         'function',
         'status',
+        'daily_worker_id',
     ];
+
+    public function dailyWorker()
+    {
+        return $this->belongsTo(DailyWorker::class, 'daily_worker_id');
+    }
 
     public function workingSessions()
     {

@@ -30,7 +30,7 @@ class PackingProductivityController extends Controller
             'data' => $this->service->dashboard($filters),
             'filters' => $filters,
             'lastBatch' => MesonImportBatch::query()->with('importer')->latest()->first(),
-            'operators' => WmsAccount::query()->where('status', '!=', 'Disabled')->orderBy('username')->get(),
+            'operators' => WmsAccount::query()->with('dailyWorker')->where('status', '!=', 'Disabled')->orderBy('username')->get(),
             'warehouses' => MesonTransaction::query()->distinct()->whereNotNull('warehouse_id')->pluck('warehouse_id')->filter()->sort()->values(),
             'functions' => WmsAccount::query()->distinct()->whereNotNull('function')->pluck('function')->filter()->sort()->values(),
             'types' => MesonTransaction::query()->distinct()->whereNotNull('transaction_type')->pluck('transaction_type')->filter()->sort()->values(),

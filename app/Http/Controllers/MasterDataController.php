@@ -536,9 +536,10 @@ class MasterDataController extends Controller
         }
 
         return view('administration.master.wms-accounts', [
-            'rows' => $query->paginate(10)->withQueryString(),
+            'rows' => $query->with('dailyWorker')->paginate(10)->withQueryString(),
             'filters' => $request->only('q', 'status'),
             'importHeaders' => self::WMS_ACCOUNT_IMPORT_HEADERS,
+            'dailyWorkers' => DailyWorker::query()->where('is_active', true)->orderBy('name')->get(),
         ]);
     }
 
@@ -609,6 +610,7 @@ class MasterDataController extends Controller
             'password' => ['required', 'string', 'max:255'],
             'function' => ['required', 'string', 'max:255'],
             'status' => ['required', 'in:Available,Assigned,Disabled'],
+            'daily_worker_id' => ['nullable', 'exists:daily_workers,id'],
         ]);
 
         WmsAccount::create($data);
@@ -627,6 +629,7 @@ class MasterDataController extends Controller
             'password' => ['required', 'string', 'max:255'],
             'function' => ['required', 'string', 'max:255'],
             'status' => ['required', 'in:Available,Assigned,Disabled'],
+            'daily_worker_id' => ['nullable', 'exists:daily_workers,id'],
         ]);
 
         $wmsAccount->update($data);

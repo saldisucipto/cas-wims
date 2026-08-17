@@ -452,7 +452,7 @@ class PackingProductivityService
      */
     private function queryRows(array $filters): Collection
     {
-        $query = MesonTransaction::query()->with('operator');
+        $query = MesonTransaction::query()->with('operator.dailyWorker');
 
         if (! empty($filters['start_date'])) {
             $query->where('transaction_time', '>=', Carbon::parse($filters['start_date'])->startOfDay());
@@ -531,6 +531,7 @@ class PackingProductivityService
             $result[] = [
                 'operator_id' => $operatorId,
                 'username' => $operator?->username ?? '?',
+                'daily_worker_name' => $operator?->dailyWorker?->name,
                 'function' => $operator?->function ?? '-',
                 'orders' => $orders,
                 'lines' => $lines,

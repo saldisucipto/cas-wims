@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\DailyWorker;
 use App\Models\MesonImportBatch;
 use App\Models\MesonTransaction;
 use App\Models\User;
@@ -213,6 +214,36 @@ test('scheduled hours excludes sunday and uses configurable hours per day', func
 
     // Monday 2026-08-17 to Saturday 2026-08-22 => 6 working days * 7h = 42h.
     expect($service->scheduledHours(\Carbon\Carbon::parse('2026-08-17'), \Carbon\Carbon::parse('2026-08-22')))->toBe(42.0);
+});
+
+test('report shows the linked daily worker name', function () {
+    $this->actingAs(User::factory()->create(['role' => 'Administrator']));
+
+    $worker = DailyWorker::query()->create([
+        'employee_code' => 'DW0001',
+        'name' => 'Andi Pratama',
+        'function' => 'Outbound',
+        'division' => 'Packer',
+        'position' => 'Packer',
+        'status' => 'Active',
+        'is_active' => true,
+    ]);
+
+    $op = seedPackingOperator('CA1OPS008');
+    $op->update(['daily_worker_id' => $worker->id]);
+
+    MesonTransaction::query()->create([
+        'transaction_id' => 'T1', 'transaction_type' => 'Picking&Packing', 'document_number' => 'DOC-A',
+        'transaction_time' => '2026-08-15 08:30:00', 'qty_each_fm' => 3, 'operator_id' => $op->id, 'operator_username' => 'CA1OPS008',
+    ]);
+
+    $data = app(PackingProductivityService::class)->dashboard(['start_date' => '2026-08-15', 'end_date' => '2026-08-15']);
+
+    expect($data['per_operator'][0]['daily_worker_name'])->toBe('Andi Pratama');
+
+    $this->get(route('administration.packing-productivity'))
+        ->assertOk()
+        ->assertSee('Andi Pratama');
 });
 
 function buildMesonProductivityWorkbookWithHeaders(array $headers, array $rows): string

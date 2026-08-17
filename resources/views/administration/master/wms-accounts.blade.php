@@ -44,7 +44,7 @@
             </form>
 
             <form action="{{ route('administration.master.wms-accounts.store') }}" method="POST"
-                class="mt-6 grid grid-cols-1 gap-3 md:grid-cols-5">
+                class="mt-6 grid grid-cols-1 gap-3 md:grid-cols-6">
                 @csrf
                 <input name="username" placeholder="Username" required
                     class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -56,6 +56,12 @@
                     <option value="Available">Tersedia</option>
                     <option value="Assigned">Dipakai</option>
                     <option value="Disabled">Nonaktif</option>
+                </select>
+                <select name="daily_worker_id" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="">No Worker</option>
+                    @foreach ($dailyWorkers as $worker)
+                        <option value="{{ $worker->id }}">{{ $worker->name }}</option>
+                    @endforeach
                 </select>
                 <button class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Add</button>
             </form>
@@ -90,6 +96,7 @@
                             <th class="px-3 py-2">Username</th>
                             <th class="px-3 py-2">Password</th>
                             <th class="px-3 py-2">Function</th>
+                            <th class="px-3 py-2">Worker</th>
                             <th class="px-3 py-2">Status</th>
                             <th class="px-3 py-2">Action</th>
                         </tr>
@@ -100,12 +107,13 @@
                                 <td class="px-3 py-2">{{ $row->username }}</td>
                                 <td class="px-3 py-2">{{ $row->password }}</td>
                                 <td class="px-3 py-2">{{ $row->function }}</td>
+                                <td class="px-3 py-2">{{ $row->dailyWorker?->name ?? '-' }}</td>
                                 <td class="px-3 py-2">{{ $row->status }}</td>
                                 <td class="px-3 py-2">
                                     <details>
                                         <summary class="cursor-pointer text-blue-700">Edit</summary>
                                         <form action="{{ route('administration.master.wms-accounts.update', $row) }}"
-                                            method="POST" class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-4">
+                                            method="POST" class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-5">
                                             @csrf
                                             <input name="username" value="{{ $row->username }}"
                                                 class="rounded border border-slate-300 px-2 py-1">
@@ -119,8 +127,14 @@
                                                         {{ $status }}</option>
                                                 @endforeach
                                             </select>
+                                            <select name="daily_worker_id" class="rounded border border-slate-300 px-2 py-1">
+                                                <option value="">No Worker</option>
+                                                @foreach ($dailyWorkers as $worker)
+                                                    <option value="{{ $worker->id }}" @selected($row->daily_worker_id === $worker->id)>{{ $worker->name }}</option>
+                                                @endforeach
+                                            </select>
                                             <button
-                                                class="rounded bg-blue-700 px-2 py-1 text-white md:col-span-4">Save</button>
+                                                class="rounded bg-blue-700 px-2 py-1 text-white md:col-span-5">Save</button>
                                         </form>
                                     </details>
                                     <form action="{{ route('administration.master.wms-accounts.delete', $row) }}"

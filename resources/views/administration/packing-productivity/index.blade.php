@@ -94,20 +94,37 @@
                 <button class="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white">Apply Filters</button>
             </form>
 
+            @if (! empty($filters['operator_id']))
+                @php
+                    $selectedOperator = $operators->firstWhere('id', (int) $filters['operator_id']);
+                    $clearOperatorLink = route('administration.packing-productivity', array_filter(array_diff_key($filters, ['operator_id' => true])));
+                @endphp
+                <div class="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                    Menampilkan: <span class="font-semibold">{{ $selectedOperator?->dailyWorker?->name ?? $selectedOperator?->username ?? '-' }}</span>
+                    <a href="{{ $clearOperatorLink }}" class="ml-2 font-semibold underline">Clear filter</a>
+                </div>
+            @endif
+
             <div class="mt-6">
                 <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Productivity per Operator</h3>
                 <div class="mt-2 overflow-x-auto">
                     <table class="wims-table min-w-full text-left text-sm">
                         <thead>
                             <tr>
-                                <th>Operator</th><th>Function</th><th>Orders</th><th>SKU Lines</th><th>Items</th>
+                                <th>Worker / Operator</th><th>Function</th><th>Orders</th><th>SKU Lines</th><th>Items</th>
                                 <th>Orders/Hr</th><th>Items/Hr</th><th>Est. Active Hrs</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse ($data['per_operator'] as $row)
                                 <tr>
-                                    <td class="font-semibold text-slate-900">{{ $row['username'] }}</td>
+                                    <td>
+                                        <a href="{{ route('administration.packing-productivity', array_merge(array_filter($filters), ['operator_id' => $row['operator_id']])) }}"
+                                            class="font-semibold text-blue-700 hover:underline">{{ $row['daily_worker_name'] ?? $row['username'] }}</a>
+                                        @if ($row['daily_worker_name'])
+                                            <div class="text-xs text-slate-500">{{ $row['username'] }}</div>
+                                        @endif
+                                    </td>
                                     <td>{{ $row['function'] }}</td>
                                     <td>{{ number_format($row['orders']) }}</td>
                                     <td>{{ number_format($row['lines']) }}</td>
@@ -124,22 +141,40 @@
                 </div>
             </div>
 
-            @php $maxHourOrders = collect($data['hourly'])->max('orders') ?: 1; @endphp
+            @php $maxHourItems = collect($data['hourly'])->max('items') ?: 1; @endphp
             <div class="mt-6">
                 <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Hourly Productivity</h3>
-                <p class="text-sm text-slate-600">Orders per hour (identifikasi jam sibuk dan distribusi workload).</p>
+                <p class="text-sm text-slate-600">Jumlah item yang di-packing per jam.</p>
                 <div class="mt-2 rounded-xl border border-slate-200 bg-white p-4">
                     <div class="flex items-end gap-1 overflow-x-auto pb-2">
                         @forelse ($data['hourly'] as $row)
-                            <div class="flex min-w-[44px] flex-col items-center" title="{{ $row['hour'] }} - {{ $row['orders'] }} orders">
-                                <div class="text-[10px] font-semibold text-slate-700">{{ $row['orders'] }}</div>
-                                <div class="w-full rounded-t bg-blue-500" style="height: {{ max(4, round($row['orders'] / $maxHourOrders * 120)) }}px"></div>
+                            <div class="flex min-w-[44px] flex-col items-center" title="{{ $row['hour'] }} - {{ $row['items'] }} items">
+                                <div class="text-[10px] font-semibold text-slate-700">{{ $row['items'] }}</div>
+                                <div class="w-full rounded-t bg-blue-500" style="height: {{ max(4, round($row['items'] / $maxHourItems * 120)) }}px"></div>
                                 <div class="mt-1 text-[10px] text-slate-500">{{ $row['hour'] }}</div>
                             </div>
                         @empty
                             <p class="text-sm text-slate-500">Belum ada data hourly.</p>
                         @endforelse
                     </div>
+                </div>
+
+                <div class="mt-3 overflow-x-auto">
+                    <table class="wims-table min-w-full text-left text-sm">
+                        <thead><tr><th>Hour</th><th>Orders</th><th>SKU Lines</th><th>Items</th></tr></thead>
+                        <tbody>
+                            @forelse ($data['hourly'] as $row)
+                                <tr>
+                                    <td class="font-semibold">{{ $row['hour'] }}</td>
+                                    <td>{{ number_format($row['orders']) }}</td>
+                                    <td>{{ number_format($row['lines']) }}</td>
+                                    <td>{{ number_format($row['items']) }}</td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="4"><div class="wims-empty-state">Belum ada data hourly.</div></td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </section>

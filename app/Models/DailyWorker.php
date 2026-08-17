@@ -28,6 +28,11 @@ class DailyWorker extends Model
         return $this->hasMany(WorkingSession::class);
     }
 
+    public function wmsAccounts()
+    {
+        return $this->hasMany(WmsAccount::class, 'daily_worker_id');
+    }
+
     public function consumableRequests()
     {
         return $this->hasMany(ConsumableRequest::class);
