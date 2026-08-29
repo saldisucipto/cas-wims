@@ -140,6 +140,9 @@ class ReportController extends Controller
 
         $query = ConsumableRequestItem::query()
             ->with(['consumable', 'consumableRequest.dailyWorker'])
+            ->whereHas('consumableRequest', function ($requestQuery) {
+                $requestQuery->where('status', 'Validated');
+            })
             ->whereBetween('created_at', [$filter['start'], $filter['end']])
             ->latest('created_at');
 
@@ -147,6 +150,9 @@ class ReportController extends Controller
 
         $allFilteredRows = ConsumableRequestItem::query()
             ->with('consumable')
+            ->whereHas('consumableRequest', function ($requestQuery) {
+                $requestQuery->where('status', 'Validated');
+            })
             ->whereBetween('created_at', [$filter['start'], $filter['end']])
             ->get();
 
@@ -186,6 +192,7 @@ class ReportController extends Controller
             'filter' => $filter,
             'summary' => [
                 'total_receiving' => $allFilteredRows->where('transaction_type', 'Receiving')->count(),
+                'total_usage' => $allFilteredRows->where('transaction_type', 'Usage')->count(),
                 'total_adjustment' => $allFilteredRows->where('transaction_type', 'Adjustment')->count(),
                 'total_opname' => $allFilteredRows->where('transaction_type', 'Opname')->count(),
             ],

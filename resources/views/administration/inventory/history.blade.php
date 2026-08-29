@@ -17,7 +17,7 @@
                     class="rounded-lg border border-slate-300 px-3 py-2 text-sm md:col-span-2">
                 <select name="type" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                     <option value="">All Types</option>
-                    @foreach (['Receiving', 'Adjustment', 'Opname'] as $type)
+                    @foreach (['Receiving', 'Usage', 'Adjustment', 'Opname'] as $type)
                         <option value="{{ $type }}" @selected(($filters['type'] ?? '') === $type)>{{ $type }}</option>
                     @endforeach
                 </select>

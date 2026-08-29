@@ -20,10 +20,14 @@
                 </div>
             </div>
 
-            <div class="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div class="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p class="text-sm text-slate-500">Total Barang Masuk</p>
                     <p class="mt-1 text-2xl font-bold text-slate-900">{{ $summary['total_receiving'] }}</p>
+                </article>
+                <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p class="text-sm text-slate-500">Total Pemakaian</p>
+                    <p class="mt-1 text-2xl font-bold text-slate-900">{{ $summary['total_usage'] }}</p>
                 </article>
                 <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p class="text-sm text-slate-500">Total Penyesuaian</p>

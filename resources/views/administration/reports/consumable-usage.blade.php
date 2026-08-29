@@ -57,6 +57,7 @@
                             <th>Worker</th>
                             <th>Consumable</th>
                             <th>Qty</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -67,10 +68,11 @@
                                 <td>{{ $row->consumableRequest?->dailyWorker?->name ?? '-' }}</td>
                                 <td>{{ $row->consumable?->name ?? '-' }}</td>
                                 <td>{{ $row->quantity }}</td>
+                                <td>{{ $row->consumableRequest?->status ?? '-' }}</td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5">
+                                <td colspan="6">
                                     <div class="wims-empty-state">Tidak ada data untuk periode yang dipilih.</div>
                                 </td>
                             </tr>

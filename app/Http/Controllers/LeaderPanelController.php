@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Consumable;
 use App\Models\ConsumableRequest;
+use App\Models\StockTransaction;
 use App\Models\WorkingSession;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class LeaderPanelController extends Controller
 {
@@ -125,11 +129,57 @@ class LeaderPanelController extends Controller
             return response()->json(['message' => 'Request already processed.'], 422);
         }
 
-        $consumableRequest->update([
-            'status' => 'Validated',
-            'validated_at' => now(),
-            'validated_by' => Auth::id(),
-        ]);
+        try {
+            DB::transaction(function () use ($consumableRequest): void {
+                $requestModel = ConsumableRequest::query()
+                    ->with('items')
+                    ->lockForUpdate()
+                    ->findOrFail($consumableRequest->id);
+
+                if ($requestModel->status !== 'Pending') {
+                    throw new RuntimeException('Request already processed.');
+                }
+
+                $validatedAt = now();
+
+                foreach ($requestModel->items as $item) {
+                    $consumable = Consumable::query()->lockForUpdate()->find($item->consumable_id);
+
+                    if (! $consumable) {
+                        continue;
+                    }
+
+                    if ($consumable->stock < (int) $item->quantity) {
+                        throw new RuntimeException('Stok '.$consumable->name.' tidak mencukupi untuk divalidasi.');
+                    }
+
+                    $before = $consumable->stock;
+                    $after = $before - (int) $item->quantity;
+
+                    $consumable->update(['stock' => $after]);
+
+                    StockTransaction::create([
+                        'consumable_id' => $consumable->id,
+                        'transaction_type' => 'Usage',
+                        'transaction_group' => $requestModel->request_number,
+                        'quantity_before' => $before,
+                        'quantity_change' => -1 * (int) $item->quantity,
+                        'quantity_after' => $after,
+                        'notes' => 'Consumable usage for request '.$requestModel->request_number,
+                        'performed_by' => Auth::id(),
+                        'transaction_at' => $validatedAt,
+                    ]);
+                }
+
+                $requestModel->update([
+                    'status' => 'Validated',
+                    'validated_at' => $validatedAt,
+                    'validated_by' => Auth::id(),
+                ]);
+            });
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
 
         return response()->json(['message' => 'Consumable Request Validated Successfully.']);
     }
