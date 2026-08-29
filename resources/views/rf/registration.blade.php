@@ -129,25 +129,27 @@
 
             if (employeeSelect.length) {
                 function employeeMatcher(params, data) {
-                    const term = $.trim(params.term || '').toLowerCase();
-                    if (term === '') {
-                        return data;
-                    }
+                     const term = String($.trim(params.term ?? '')).toLowerCase();
 
-                    const element = data.element;
-                    if (!element) {
-                        return null;
-                    }
+    if (!term) {
+        return data;
+    }
 
-                    const option = $(element);
-                    const name = (option.val() || '').toLowerCase();
-                    const code = (option.data('code') || '').toLowerCase();
+    const element = data.element;
 
-                    if (name.includes(term) || code.includes(term)) {
-                        return data;
-                    }
+    if (!element) {
+        return null;
+    }
 
-                    return null;
+    const option = $(element);
+
+    const name = String(option.val() ?? '').toLowerCase();
+    const code = String(option.data('code') ?? '').toLowerCase();
+
+    return (
+        name.includes(term) ||
+        code.includes(term)
+    ) ? data : null;
                 }
 
                 function employeeTemplate(data) {
@@ -155,19 +157,21 @@
                         return data.text;
                     }
 
-                    const option = $(data.element);
-                    const name = option.val() || '';
-                    const code = option.data('code') || '-';
-                    const fn = option.data('function') || '-';
-                    const position = option.data('position') || '-';
 
-                    return $(
-                        '<div class="py-1">' +
-                        '<div class="font-semibold text-slate-900">' + name + '</div>' +
-                        '<div class="text-xs text-slate-600">' + fn + ' • ' + position + '</div>' +
-                        '<div class="text-xs text-slate-500">' + code + '</div>' +
-                        '</div>'
-                    );
+    const option = $(data.element);
+
+    const name = String(option.val() ?? '');
+    const code = String(option.data('code') ?? '-');
+    const fn = String(option.data('function') ?? '-');
+    const position = String(option.data('position') ?? '-');
+
+    return $(
+        '<div class="py-1">' +
+        '<div class="font-semibold text-slate-900">' + name + '</div>' +
+        '<div class="text-xs text-slate-600">' + fn + ' • ' + position + '</div>' +
+        '<div class="text-xs text-slate-500">' + code + '</div>' +
+        '</div>'
+    );
                 }
 
                 function employeeSelectionTemplate(data) {
