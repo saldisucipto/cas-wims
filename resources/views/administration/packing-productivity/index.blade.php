@@ -158,9 +158,11 @@
                 <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Hourly Productivity</h3>
                 <p class="text-sm text-slate-600">Jumlah item yang di-packing per jam.</p>
                 <div class="mt-2 rounded-xl border border-slate-200 bg-white p-4">
-                    <div class="flex items-end gap-1 overflow-x-auto pb-2">
+                    @php $hourlyCount = max(1, count($data['hourly'])); @endphp
+                    <div class="grid min-h-45 items-end gap-2 overflow-x-auto pb-2"
+                        style="grid-template-columns: repeat({{ $hourlyCount }}, minmax(52px, 1fr));">
                         @forelse ($data['hourly'] as $row)
-                            <div class="flex min-w-[44px] flex-col items-center" title="{{ $row['hour'] }} - {{ $row['items'] }} items">
+                            <div class="flex flex-col items-center" title="{{ $row['hour'] }} - {{ $row['items'] }} items">
                                 <div class="text-[10px] font-semibold text-slate-700">{{ $row['items'] }}</div>
                                 <div class="w-full rounded-t bg-blue-500" style="height: {{ max(4, round($row['items'] / $maxHourItems * 120)) }}px"></div>
                                 <div class="mt-1 text-[10px] text-slate-500">{{ $row['hour'] }}</div>
