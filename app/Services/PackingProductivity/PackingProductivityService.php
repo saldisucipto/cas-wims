@@ -137,7 +137,7 @@ class PackingProductivityService
     {
         $value = SystemSetting::query()->where('setting_key', 'pp_transaction_types')->value('setting_value');
 
-        return collect(explode(',', (string) ($value ?? 'Picking&Packing')))
+        return collect(explode(',', (string) ($value ?? 'Packing')))
             ->map(fn ($type) => trim($type))
             ->filter()
             ->values()
