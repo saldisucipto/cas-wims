@@ -269,6 +269,10 @@
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.reports.consumable-usage' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.reports.consumable-usage' ? 'true' : 'false' }}">Consumable
                                     Usage Report</a></li>
+                                <li><a href="{{ route('administration.reports.consumable-stock-card') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ in_array($currentRoute, ['administration.reports.consumable-stock-card', 'administration.reports.consumable-stock-card.print'], true) ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.reports.consumable-stock-card' ? 'true' : 'false' }}">Kartu
+                                    Stok Consumable</a></li>
                             <li><a href="{{ route('administration.reports.inventory') }}"
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.reports.inventory' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.reports.inventory' ? 'true' : 'false' }}">Inventory
@@ -723,6 +727,11 @@
                         <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
                             <h3 class="text-base font-semibold text-slate-900">Consumable Usage Report</h3><a
                                 href="{{ route('administration.reports.consumable-usage') }}"
+                                class="mt-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open</a>
+                        </article>
+                        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">
+                            <h3 class="text-base font-semibold text-slate-900">Kartu Stok Consumable</h3><a
+                                href="{{ route('administration.reports.consumable-stock-card') }}"
                                 class="mt-4 inline-flex rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Open</a>
                         </article>
                         <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-300/40">

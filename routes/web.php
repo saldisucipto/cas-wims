@@ -102,6 +102,8 @@ Route::get('/administration/inventory/transactions', [InventoryController::class
 Route::get('/administration/reports/working-sessions', [ReportController::class, 'workingSessions'])->name('administration.reports.working-sessions');
 Route::post('/administration/reports/working-sessions/{workingSession}/force-close', [ReportController::class, 'forceCloseWorkingSession'])->name('administration.reports.working-sessions.force-close');
 Route::get('/administration/reports/consumable-usage', [ReportController::class, 'consumableUsage'])->name('administration.reports.consumable-usage');
+Route::get('/administration/reports/consumable-stock-card', [ReportController::class, 'consumableStockCard'])->name('administration.reports.consumable-stock-card');
+Route::get('/administration/reports/consumable-stock-card/print', [ReportController::class, 'printConsumableStockCard'])->name('administration.reports.consumable-stock-card.print');
 Route::get('/administration/reports/inventory', [ReportController::class, 'inventory'])->name('administration.reports.inventory');
 Route::get('/administration/reports/atk-stock-card', [AtkController::class, 'stockCard'])->name('administration.reports.atk-stock-card');
 Route::get('/administration/reports/atk-stock-card/print', [AtkController::class, 'printStockCard'])->name('administration.reports.atk-stock-card.print');

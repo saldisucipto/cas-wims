@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Consumable;
 use App\Models\ConsumableRequestItem;
 use App\Models\DailyWorker;
 use App\Models\RfDevice;
@@ -9,6 +10,8 @@ use App\Models\StockTransaction;
 use App\Models\WorkingSession;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -168,6 +171,95 @@ class ReportController extends Controller
         ]);
     }
 
+    public function consumableStockCard(Request $request)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $filter = $this->resolveConsumableStockCardFilter($request);
+
+        $consumables = Consumable::query()->orderBy('name')->get();
+        $selectedConsumableId = $request->integer('consumable_id');
+
+        if (! $selectedConsumableId) {
+            $summaryRows = $this->consumableSummaryRows($filter);
+
+            return view('administration.reports.consumable-stock-card', [
+                'mode' => 'summary',
+                'rows' => $summaryRows,
+                'filter' => array_merge($filter, $request->only('consumable_id')),
+                'consumables' => $consumables,
+                'summary' => [
+                    'total_in' => $summaryRows->sum('total_in'),
+                    'total_out' => $summaryRows->sum('total_out'),
+                    'total_items' => $summaryRows->count(),
+                ],
+            ]);
+        }
+
+        $consumable = Consumable::query()->find($selectedConsumableId);
+
+        if (! $consumable) {
+            return back()->withErrors(['consumable_filter' => 'Consumable tidak ditemukan.']);
+        }
+
+        $movementData = $this->buildConsumableMovementData($consumable, $filter);
+        $rows = $this->paginateCollection($movementData['rows_desc'], 15, $request);
+
+        return view('administration.reports.consumable-stock-card', [
+            'mode' => 'detail',
+            'rows' => $rows,
+            'filter' => array_merge($filter, $request->only('consumable_id')),
+            'consumables' => $consumables,
+            'summary' => [
+                'total_in' => $movementData['total_in'],
+                'total_out' => $movementData['total_out'],
+                'total_items' => $movementData['rows_desc']->isEmpty() ? 0 : 1,
+            ],
+        ]);
+    }
+
+    public function printConsumableStockCard(Request $request)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $filter = $this->resolveConsumableStockCardFilter($request);
+
+        if (! $request->filled('consumable_id')) {
+            $summaryRows = $this->consumableSummaryRows($filter);
+
+            return view('administration.reports.consumable-stock-card-summary-print', [
+                'rows' => $summaryRows,
+                'filter' => $filter,
+                'printedBy' => Auth::user()->name,
+                'printedAt' => now(),
+            ]);
+        }
+
+        $consumable = Consumable::query()->find($request->integer('consumable_id'));
+
+        if (! $consumable) {
+            return back()->withErrors(['consumable_print' => 'Pilih consumable terlebih dahulu.']);
+        }
+
+        $movementData = $this->buildConsumableMovementData($consumable, $filter);
+
+        return view('administration.reports.consumable-stock-card-print', [
+            'consumable' => $consumable,
+            'transactions' => $movementData['rows_asc'],
+            'filter' => $filter,
+            'openingBalance' => $movementData['opening_balance'],
+            'totalIncoming' => $movementData['total_in'],
+            'totalOutgoing' => $movementData['total_out'],
+            'endingBalance' => $movementData['ending_balance'],
+            'printedBy' => Auth::user()->name,
+            'printedAt' => now(),
+        ]);
+    }
+
     public function inventory(Request $request)
     {
         if ($redirect = $this->ensureAdmin()) {
@@ -273,6 +365,194 @@ class ReportController extends Controller
                 'total_sessions' => $allRows->sum('working_sessions_count'),
             ],
         ]);
+    }
+
+    private function consumableSummaryRows(array $filter): Collection
+    {
+        $incomingTotals = StockTransaction::query()
+            ->select('consumable_id')
+            ->selectRaw('COALESCE(SUM(quantity_change), 0) as total_in')
+            ->whereBetween('transaction_at', [$filter['start'], $filter['end']])
+            ->where('transaction_type', 'Receiving')
+            ->groupBy('consumable_id')
+            ->get()
+            ->keyBy('consumable_id');
+
+        $outgoingTotals = ConsumableRequestItem::query()
+            ->select('consumable_id')
+            ->selectRaw('COALESCE(SUM(quantity), 0) as total_out')
+            ->whereHas('consumableRequest', function ($query) {
+                $query->where('status', 'Validated');
+            })
+            ->whereBetween('created_at', [$filter['start'], $filter['end']])
+            ->groupBy('consumable_id')
+            ->get()
+            ->keyBy('consumable_id');
+
+        return Consumable::query()
+            ->orderBy('name')
+            ->get()
+            ->map(function (Consumable $consumable) use ($incomingTotals, $outgoingTotals) {
+                $incoming = $incomingTotals->get($consumable->id);
+                $outgoing = $outgoingTotals->get($consumable->id);
+
+                return [
+                    'sku' => $consumable->sku,
+                    'name' => $consumable->name,
+                    'unit' => $consumable->unit,
+                    'total_in' => (int) ($incoming->total_in ?? 0),
+                    'total_out' => (int) ($outgoing->total_out ?? 0),
+                    'balance' => (int) $consumable->stock,
+                ];
+            })
+            ->values();
+    }
+
+    /**
+     * @return array{rows_asc:Collection<int,object>,rows_desc:Collection<int,object>,opening_balance:int,ending_balance:int,total_in:int,total_out:int}
+     */
+    private function buildConsumableMovementData(Consumable $consumable, array $filter): array
+    {
+        $incomingRows = StockTransaction::query()
+            ->with('performer')
+            ->where('consumable_id', $consumable->id)
+            ->where('transaction_type', 'Receiving')
+            ->whereBetween('transaction_at', [$filter['start'], $filter['end']])
+            ->orderBy('transaction_at')
+            ->orderBy('id')
+            ->get()
+            ->map(function (StockTransaction $row) use ($consumable) {
+                return (object) [
+                    'row_key' => 'receiving-'.$row->id,
+                    'transaction_at' => $row->transaction_at,
+                    'transaction_type' => 'Receiving',
+                    'reference' => $row->purchase_request_number ?: ($row->transaction_group ?: '-'),
+                    'consumable_name' => $consumable->name,
+                    'quantity_in' => max((int) $row->quantity_change, 0),
+                    'quantity_out' => 0,
+                    'user_name' => $row->received_by_name ?: ($row->performer?->name ?? '-'),
+                    'notes' => $row->notes ?: '-',
+                ];
+            });
+
+        $outgoingRows = ConsumableRequestItem::query()
+            ->with(['consumableRequest.dailyWorker'])
+            ->where('consumable_id', $consumable->id)
+            ->whereHas('consumableRequest', function ($query) {
+                $query->where('status', 'Validated');
+            })
+            ->whereBetween('created_at', [$filter['start'], $filter['end']])
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get()
+            ->map(function (ConsumableRequestItem $row) use ($consumable) {
+                return (object) [
+                    'row_key' => 'usage-'.$row->id,
+                    'transaction_at' => $row->created_at,
+                    'transaction_type' => 'Usage',
+                    'reference' => $row->consumableRequest?->request_number ?: '-',
+                    'consumable_name' => $consumable->name,
+                    'quantity_in' => 0,
+                    'quantity_out' => (int) $row->quantity,
+                    'user_name' => $row->consumableRequest?->dailyWorker?->name ?? '-',
+                    'notes' => 'Consumable usage untuk request '.($row->consumableRequest?->request_number ?: '-'),
+                ];
+            });
+
+        $rowsAsc = $incomingRows
+            ->concat($outgoingRows)
+            ->sortBy([
+                ['transaction_at', 'asc'],
+                ['row_key', 'asc'],
+            ])
+            ->values();
+
+        $totalIncoming = (int) $rowsAsc->sum('quantity_in');
+        $totalOutgoing = (int) $rowsAsc->sum('quantity_out');
+
+        $previousTransaction = StockTransaction::query()
+            ->where('consumable_id', $consumable->id)
+            ->where('transaction_at', '<', $filter['start'])
+            ->latest('transaction_at')
+            ->first();
+
+        if ($previousTransaction) {
+            $openingBalance = (int) $previousTransaction->quantity_after;
+        } else {
+            $openingBalance = (int) $consumable->stock - $totalIncoming + $totalOutgoing;
+        }
+
+        $runningBalance = $openingBalance;
+        $rowsWithBalanceAsc = $rowsAsc->map(function (object $row) use (&$runningBalance) {
+            $runningBalance = $runningBalance + $row->quantity_in - $row->quantity_out;
+            $row->balance = $runningBalance;
+
+            return $row;
+        });
+
+        return [
+            'rows_asc' => $rowsWithBalanceAsc,
+            'rows_desc' => $rowsWithBalanceAsc->sortByDesc([
+                ['transaction_at', 'desc'],
+                ['row_key', 'desc'],
+            ])->values(),
+            'opening_balance' => $openingBalance,
+            'ending_balance' => $openingBalance + $totalIncoming - $totalOutgoing,
+            'total_in' => $totalIncoming,
+            'total_out' => $totalOutgoing,
+        ];
+    }
+
+    private function paginateCollection(Collection $rows, int $perPage, Request $request): LengthAwarePaginator
+    {
+        $page = max(1, (int) $request->query('page', 1));
+        $items = $rows->forPage($page, $perPage)->values();
+
+        return new LengthAwarePaginator(
+            $items,
+            $rows->count(),
+            $perPage,
+            $page,
+            [
+                'path' => $request->url(),
+                'query' => $request->query(),
+            ]
+        );
+    }
+
+    private function resolveConsumableStockCardFilter(Request $request): array
+    {
+        $period = $request->string('period')->toString() ?: 'this_month';
+        $startDate = $request->string('start_date')->toString();
+        $endDate = $request->string('end_date')->toString();
+
+        if ($period === 'custom' && $startDate && $endDate) {
+            $start = Carbon::parse($startDate)->startOfDay();
+            $end = Carbon::parse($endDate)->endOfDay();
+
+            return [
+                'period' => 'custom',
+                'start_date' => $start->toDateString(),
+                'end_date' => $end->toDateString(),
+                'start' => $start,
+                'end' => $end,
+                'label' => $start->translatedFormat('d F Y').' - '.$end->translatedFormat('d F Y'),
+            ];
+        }
+
+        [$start, $end, $label] = match ($period) {
+            'today' => [Carbon::today()->startOfDay(), Carbon::today()->endOfDay(), 'Hari Ini'],
+            default => [Carbon::now()->startOfMonth(), Carbon::now()->endOfMonth(), 'Bulan Ini'],
+        };
+
+        return [
+            'period' => $period,
+            'start_date' => $start->toDateString(),
+            'end_date' => $end->toDateString(),
+            'start' => $start,
+            'end' => $end,
+            'label' => $label,
+        ];
     }
 
     private function resolveDateFilter(Request $request): array

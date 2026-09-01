@@ -192,8 +192,8 @@
                 }
 
                 const option = $(element);
-                const name = (option.val() || '').toLowerCase();
-                const code = (option.data('code') || '').toLowerCase();
+                const name = String(option.val() ?? '').toLowerCase();
+                const code = String(option.data('code') ?? '').toLowerCase();
 
                 if (name.includes(term) || code.includes(term)) {
                     return data;
