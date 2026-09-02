@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Consumable;
+use App\Models\ConsumableRequest;
 use App\Models\ConsumableRequestItem;
 use App\Models\DailyWorker;
 use App\Models\RfDevice;
@@ -413,15 +414,39 @@ class ReportController extends Controller
      */
     private function buildConsumableMovementData(Consumable $consumable, array $filter): array
     {
-        $rowsAsc = StockTransaction::query()
+        $transactions = StockTransaction::query()
             ->with('performer')
             ->where('consumable_id', $consumable->id)
             ->whereBetween('transaction_at', [$filter['start'], $filter['end']])
             ->orderBy('transaction_at')
             ->orderBy('id')
+            ->get();
+
+        $usageRequestNumbers = $transactions
+            ->where('transaction_type', 'Usage')
+            ->pluck('transaction_group')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $usageRequesterNames = ConsumableRequest::query()
+            ->with('dailyWorker')
+            ->whereIn('request_number', $usageRequestNumbers)
             ->get()
-            ->map(function (StockTransaction $row) use ($consumable) {
+            ->mapWithKeys(function (ConsumableRequest $request) {
+                return [
+                    $request->request_number => $request->dailyWorker?->name ?? '-',
+                ];
+            });
+
+        $rowsAsc = $transactions
+            ->map(function (StockTransaction $row) use ($consumable, $usageRequesterNames) {
                 $quantityChange = (int) $row->quantity_change;
+                $userName = $row->received_by_name ?: ($row->performer?->name ?? '-');
+
+                if ($row->transaction_type === 'Usage' && $row->transaction_group) {
+                    $userName = $usageRequesterNames->get($row->transaction_group, $userName);
+                }
 
                 return (object) [
                     'row_key' => 'stock-'.$row->id,
@@ -433,7 +458,7 @@ class ReportController extends Controller
                     'quantity_out' => abs(min($quantityChange, 0)),
                     'balance' => (int) $row->quantity_after,
                     'quantity_before' => (int) $row->quantity_before,
-                    'user_name' => $row->received_by_name ?: ($row->performer?->name ?? '-'),
+                    'user_name' => $userName,
                     'notes' => $row->notes ?: '-',
                 ];
             })
