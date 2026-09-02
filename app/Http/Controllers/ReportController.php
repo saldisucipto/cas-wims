@@ -413,91 +413,59 @@ class ReportController extends Controller
      */
     private function buildConsumableMovementData(Consumable $consumable, array $filter): array
     {
-        $incomingRows = StockTransaction::query()
+        $rowsAsc = StockTransaction::query()
             ->with('performer')
             ->where('consumable_id', $consumable->id)
-            ->where('transaction_type', 'Receiving')
             ->whereBetween('transaction_at', [$filter['start'], $filter['end']])
             ->orderBy('transaction_at')
             ->orderBy('id')
             ->get()
             ->map(function (StockTransaction $row) use ($consumable) {
+                $quantityChange = (int) $row->quantity_change;
+
                 return (object) [
-                    'row_key' => 'receiving-'.$row->id,
+                    'row_key' => 'stock-'.$row->id,
                     'transaction_at' => $row->transaction_at,
-                    'transaction_type' => 'Receiving',
+                    'transaction_type' => $row->transaction_type,
                     'reference' => $row->purchase_request_number ?: ($row->transaction_group ?: '-'),
                     'consumable_name' => $consumable->name,
-                    'quantity_in' => max((int) $row->quantity_change, 0),
-                    'quantity_out' => 0,
+                    'quantity_in' => max($quantityChange, 0),
+                    'quantity_out' => abs(min($quantityChange, 0)),
+                    'balance' => (int) $row->quantity_after,
+                    'quantity_before' => (int) $row->quantity_before,
                     'user_name' => $row->received_by_name ?: ($row->performer?->name ?? '-'),
                     'notes' => $row->notes ?: '-',
                 ];
-            });
-
-        $outgoingRows = ConsumableRequestItem::query()
-            ->with(['consumableRequest.dailyWorker'])
-            ->where('consumable_id', $consumable->id)
-            ->whereHas('consumableRequest', function ($query) {
-                $query->where('status', 'Validated');
             })
-            ->whereBetween('created_at', [$filter['start'], $filter['end']])
-            ->orderBy('created_at')
-            ->orderBy('id')
-            ->get()
-            ->map(function (ConsumableRequestItem $row) use ($consumable) {
-                return (object) [
-                    'row_key' => 'usage-'.$row->id,
-                    'transaction_at' => $row->created_at,
-                    'transaction_type' => 'Usage',
-                    'reference' => $row->consumableRequest?->request_number ?: '-',
-                    'consumable_name' => $consumable->name,
-                    'quantity_in' => 0,
-                    'quantity_out' => (int) $row->quantity,
-                    'user_name' => $row->consumableRequest?->dailyWorker?->name ?? '-',
-                    'notes' => 'Consumable usage untuk request '.($row->consumableRequest?->request_number ?: '-'),
-                ];
-            });
-
-        $rowsAsc = $incomingRows
-            ->concat($outgoingRows)
-            ->sortBy([
-                ['transaction_at', 'asc'],
-                ['row_key', 'asc'],
-            ])
             ->values();
 
         $totalIncoming = (int) $rowsAsc->sum('quantity_in');
         $totalOutgoing = (int) $rowsAsc->sum('quantity_out');
 
-        $previousTransaction = StockTransaction::query()
-            ->where('consumable_id', $consumable->id)
-            ->where('transaction_at', '<', $filter['start'])
-            ->latest('transaction_at')
-            ->first();
-
-        if ($previousTransaction) {
-            $openingBalance = (int) $previousTransaction->quantity_after;
+        if ($rowsAsc->isNotEmpty()) {
+            $openingBalance = (int) $rowsAsc->first()->quantity_before;
+            $endingBalance = (int) $rowsAsc->last()->balance;
         } else {
-            $openingBalance = (int) $consumable->stock - $totalIncoming + $totalOutgoing;
+            $previousTransaction = StockTransaction::query()
+                ->where('consumable_id', $consumable->id)
+                ->where('transaction_at', '<', $filter['start'])
+                ->latest('transaction_at')
+                ->first();
+
+            $openingBalance = $previousTransaction
+                ? (int) $previousTransaction->quantity_after
+                : (int) $consumable->stock;
+            $endingBalance = $openingBalance;
         }
 
-        $runningBalance = $openingBalance;
-        $rowsWithBalanceAsc = $rowsAsc->map(function (object $row) use (&$runningBalance) {
-            $runningBalance = $runningBalance + $row->quantity_in - $row->quantity_out;
-            $row->balance = $runningBalance;
-
-            return $row;
-        });
-
         return [
-            'rows_asc' => $rowsWithBalanceAsc,
-            'rows_desc' => $rowsWithBalanceAsc->sortByDesc([
+            'rows_asc' => $rowsAsc,
+            'rows_desc' => $rowsAsc->sortByDesc([
                 ['transaction_at', 'desc'],
                 ['row_key', 'desc'],
             ])->values(),
             'opening_balance' => $openingBalance,
-            'ending_balance' => $openingBalance + $totalIncoming - $totalOutgoing,
+            'ending_balance' => $endingBalance,
             'total_in' => $totalIncoming,
             'total_out' => $totalOutgoing,
         ];
