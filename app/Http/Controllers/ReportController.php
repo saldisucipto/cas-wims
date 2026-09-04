@@ -26,6 +26,8 @@ class ReportController extends Controller
             return $redirect;
         }
 
+        $this->autoForceCloseCrossDayWorkingSessions();
+
         $filter = $this->resolveDateFilter($request);
 
         $query = WorkingSession::query()
@@ -132,6 +134,82 @@ class ReportController extends Controller
         }
 
         return back()->with('success_force_close', true);
+    }
+
+    private function autoForceCloseCrossDayWorkingSessions(): void
+    {
+        $todayStart = Carbon::today()->startOfDay();
+
+        $staleSessionIds = WorkingSession::query()
+            ->where('status', 'Working')
+            ->where('started_at', '<', $todayStart)
+            ->pluck('id');
+
+        if ($staleSessionIds->isEmpty()) {
+            return;
+        }
+
+        foreach ($staleSessionIds as $sessionId) {
+            DB::transaction(function () use ($sessionId, $todayStart) {
+                $session = WorkingSession::query()
+                    ->with(['dailyWorker', 'packingStation', 'rfDevice', 'wmsAccount'])
+                    ->lockForUpdate()
+                    ->find($sessionId);
+
+                if (! $session || $session->status !== 'Working') {
+                    return;
+                }
+
+                if (! $session->started_at || ! $session->started_at->lt($todayStart)) {
+                    return;
+                }
+
+                $now = now();
+
+                if ($session->packing_station_id) {
+                    $station = $session->packingStation()->lockForUpdate()->first();
+
+                    if ($station) {
+                        $station->update(['status' => 'Available']);
+                    }
+                }
+
+                if ($session->rf_device_id) {
+                    $device = $session->rfDevice()->lockForUpdate()->first();
+
+                    if ($device) {
+                        $device->update(['status' => 'Available']);
+                    }
+                }
+
+                if ($session->wms_account_id) {
+                    $wmsAccount = $session->wmsAccount()->lockForUpdate()->first();
+
+                    if ($wmsAccount) {
+                        $wmsAccount->update(['status' => 'Available']);
+                    }
+                }
+
+                $session->update([
+                    'status' => 'Closed',
+                    'ended_at' => $now,
+                    'close_type' => 'Force Close',
+                    'force_closed_by' => Auth::id(),
+                    'force_closed_at' => $now,
+                    'force_close_reason' => 'Auto force close karena sesi lintas hari.',
+                ]);
+
+                Log::warning('Auto Force Closed Working Session', [
+                    'actor' => Auth::user()?->name,
+                    'actor_role' => Auth::user()?->role,
+                    'session_id' => $session->id,
+                    'employee' => $session->dailyWorker?->name,
+                    'rf_device' => $session->rfDevice?->code,
+                    'packing_station' => $session->packingStation?->name,
+                    'closed_at' => $now->format('d F Y H:i'),
+                ]);
+            });
+        }
     }
 
     public function consumableUsage(Request $request)
