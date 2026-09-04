@@ -94,6 +94,35 @@ test('administrator can import daily workers from xlsx', function () {
     ]);
 });
 
+test('administrator can search daily workers by worker name', function () {
+    $this->actingAs(User::factory()->create(['role' => 'Administrator']));
+
+    DailyWorker::query()->create([
+        'employee_code' => 'EMP-100',
+        'name' => 'Siti Nurhaliza',
+        'function' => 'Outbound',
+        'division' => 'Packer',
+        'position' => 'Packer',
+        'status' => 'Active',
+        'is_active' => true,
+    ]);
+
+    DailyWorker::query()->create([
+        'employee_code' => 'EMP-200',
+        'name' => 'Budi Santoso',
+        'function' => 'Outbound',
+        'division' => 'Packer',
+        'position' => 'Packer',
+        'status' => 'Active',
+        'is_active' => true,
+    ]);
+
+    $this->get(route('administration.master.daily-workers', ['q' => 'nurha']))
+        ->assertOk()
+        ->assertSee('Siti Nurhaliza')
+        ->assertDontSee('Budi Santoso');
+});
+
 function buildDailyWorkerImportWorkbook(array $rows): string
 {
     $headers = ['employee_code', 'name', 'function', 'division', 'position', 'status'];

@@ -386,10 +386,12 @@ class MasterDataController extends Controller
 
         $query = DailyWorker::query()->orderBy('employee_code');
 
-        if ($request->filled('q')) {
-            $query->where(function ($builder) use ($request) {
-                $builder->where('employee_code', 'like', '%'.$request->string('q').'%')
-                    ->orWhere('name', 'like', '%'.$request->string('q').'%');
+        $keyword = trim($request->string('q')->toString());
+
+        if ($keyword !== '') {
+            $query->where(function ($builder) use ($keyword) {
+                $builder->where('employee_code', 'like', '%'.$keyword.'%')
+                    ->orWhereRaw('LOWER(name) like ?', ['%'.strtolower($keyword).'%']);
             });
         }
 
