@@ -39,7 +39,6 @@
 <body>
     <div class="print-container">
         @php
-            $daysInMonth = \Carbon\Carbon::create($schedule->year, $schedule->month, 1)->daysInMonth;
             $detailMap = [];
             foreach ($schedule->details as $detail) {
                 $detailMap[$detail->employee_id][$detail->date] = $detail;
@@ -59,7 +58,15 @@
 
         <div class="info-grid">
             <div><span class="label">Schedule No</span>: {{ $schedule->schedule_number }}</div>
-            <div><span class="label">Period</span>: {{ \Carbon\Carbon::create($schedule->year, $schedule->month, 1)->translatedFormat('F Y') }}</div>
+            <div>
+                <span class="label">Period</span>:
+                @if ($schedule->period_start_date && $schedule->period_end_date)
+                    {{ \Carbon\Carbon::parse($schedule->period_start_date)->format('d M Y') }} - {{ \Carbon\Carbon::parse($schedule->period_end_date)->format('d M Y') }}
+                @else
+                    {{ \Carbon\Carbon::create($schedule->year, $schedule->month, 1)->translatedFormat('F Y') }}
+                @endif
+            </div>
+            <div><span class="label">Division</span>: {{ $schedule->division?->name ?? '-' }}</div>
             <div><span class="label">Status</span>: {{ $schedule->status }}</div>
             <div><span class="label">Created By</span>: {{ $schedule->creator?->name ?? '-' }}</div>
         </div>
@@ -89,7 +96,9 @@
             <thead>
                 <tr>
                     <th style="text-align:left;">Employee</th>
-                    @for ($d = 1; $d <= $daysInMonth; $d++) <th>{{ $d }}</th> @endfor
+                    @foreach ($dateColumns as $date)
+                        <th>{{ \Carbon\Carbon::parse($date)->format('d/m') }}</th>
+                    @endforeach
                 </tr>
             </thead>
             <tbody>
@@ -97,13 +106,12 @@
                     @php $employee = $details->first()->employee; @endphp
                     <tr>
                         <td style="text-align:left;">{{ $employee?->employee_name ?? '-' }} ({{ $employee?->employee_code ?? $employeeId }})</td>
-                        @for ($d = 1; $d <= $daysInMonth; $d++)
+                        @foreach ($dateColumns as $date)
                             @php
-                                $date = \Carbon\Carbon::create($schedule->year, $schedule->month, $d)->toDateString();
                                 $shift = $detailMap[$employeeId][$date]->shift ?? 'OFF';
                             @endphp
                             <td>{{ $shift }}</td>
-                        @endfor
+                        @endforeach
                     </tr>
                 @endforeach
             </tbody>

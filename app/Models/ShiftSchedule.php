@@ -13,7 +13,12 @@ class ShiftSchedule extends Model
         'schedule_number',
         'month',
         'year',
+        'period_start_date',
+        'period_end_date',
         'status',
+        'division_id',
+        'selected_employee_ids',
+        'initial_shift_map',
         'manpower_planning_id',
         'notes',
         'created_by',
@@ -27,6 +32,10 @@ class ShiftSchedule extends Model
         return [
             'month' => 'integer',
             'year' => 'integer',
+            'period_start_date' => 'date',
+            'period_end_date' => 'date',
+            'selected_employee_ids' => 'array',
+            'initial_shift_map' => 'array',
             'finalized_at' => 'datetime',
         ];
     }
@@ -44,6 +53,11 @@ class ShiftSchedule extends Model
     public function manpowerPlanning()
     {
         return $this->belongsTo(ManpowerPlanning::class);
+    }
+
+    public function division()
+    {
+        return $this->belongsTo(Division::class);
     }
 
     public function creator()

@@ -16,7 +16,12 @@
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Shift Schedule</p>
                     <h1 class="wims-page-title">Edit Assignments — {{ $schedule->schedule_number }}</h1>
-                    <p class="wims-page-subtitle">{{ \Carbon\Carbon::create($schedule->year, $schedule->month, 1)->translatedFormat('F Y') }} · Set shift per employee per day, individually or in bulk.</p>
+                    <p class="wims-page-subtitle">
+                        {{ $schedule->period_start_date ? \Carbon\Carbon::parse($schedule->period_start_date)->format('d M Y') : '-' }}
+                        -
+                        {{ $schedule->period_end_date ? \Carbon\Carbon::parse($schedule->period_end_date)->format('d M Y') : '-' }}
+                        · Set shift per employee per day, individually or in bulk.
+                    </p>
                 </div>
                 <div class="flex gap-2">
                     <a href="{{ route('administration.shift-schedules.show', $schedule) }}" class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Back</a>
@@ -40,18 +45,19 @@
                     <table class="wims-table min-w-full text-left text-sm">
                         <thead>
                             <tr>
-                                <th class="min-w-[10rem]">Employee</th>
-                                @for ($day = 1; $day <= $days; $day++)
+                                <th class="min-w-40">Employee</th>
+                                @foreach ($dateColumns as $date)
                                     <th class="text-center">
-                                        <div>D{{ $day }}</div>
-                                        <select class="day-bulk mt-1 w-24 rounded border border-slate-300 px-1 py-0.5 text-xs" data-day="{{ $day }}">
+                                        <div>{{ \Carbon\Carbon::parse($date)->isoFormat('ddd') }}</div>
+                                        <div class="text-[10px]">{{ \Carbon\Carbon::parse($date)->format('d/m') }}</div>
+                                        <select class="day-bulk mt-1 w-24 rounded border border-slate-300 px-1 py-0.5 text-xs" data-date="{{ $date }}">
                                             <option value="">Set day…</option>
                                             @foreach ($shifts as $code => $label)
                                                 <option value="{{ $code }}">{{ $code }}</option>
                                             @endforeach
                                         </select>
                                     </th>
-                                @endfor
+                                @endforeach
                             </tr>
                         </thead>
                         <tbody>
@@ -68,16 +74,15 @@
                                             @endforeach
                                         </select>
                                     </td>
-                                    @for ($day = 1; $day <= $days; $day++)
+                                    @foreach ($dateColumns as $date)
                                         @php
-                                            $date = \Carbon\Carbon::create($schedule->year, $schedule->month, $day)->toDateString();
                                             $detail = $detailMap[$entry->employee_id][$date] ?? null;
                                         @endphp
                                         <td class="text-center">
                                             @if ($detail)
                                                 <select name="assignments[{{ $detail->id }}]"
                                                     class="cell-select w-24 rounded border border-slate-300 px-1 py-1 text-xs"
-                                                    data-employee="{{ $entry->employee_id }}" data-day="{{ $day }}">
+                                                    data-employee="{{ $entry->employee_id }}" data-date="{{ $date }}">
                                                     @foreach ($shifts as $code => $label)
                                                         <option value="{{ $code }}" @selected($detail->shift === $code)>{{ $code }}</option>
                                                     @endforeach
@@ -89,10 +94,10 @@
                                                 <span class="text-xs text-slate-400">–</span>
                                             @endif
                                         </td>
-                                    @endfor
+                                    @endforeach
                                 </tr>
                             @empty
-                                <tr><td colspan="{{ $days + 1 }}"><div class="wims-empty-state">Belum ada detail schedule.</div></td></tr>
+                                <tr><td colspan="{{ count($dateColumns) + 1 }}"><div class="wims-empty-state">Belum ada detail schedule.</div></td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -119,9 +124,9 @@
 
             $('.day-bulk').on('change', function() {
                 const value = $(this).val();
-                const day = $(this).data('day');
+                const date = $(this).data('date');
                 if (!value) return;
-                $(`.cell-select[data-day="${day}"]`).val(value);
+                $(`.cell-select[data-date="${date}"]`).val(value);
             });
         });
     </script>

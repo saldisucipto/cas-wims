@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Division;
+use App\Models\Employee;
 use App\Models\ManpowerPlanning;
 use App\Models\ShiftHandover;
 use App\Models\ShiftSchedule;
+use App\Models\ShiftScheduleDetail;
 use App\Services\ShiftScheduling\ShiftScheduleService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -22,7 +25,7 @@ class ShiftScheduleController extends Controller
             return $redirect;
         }
 
-        $query = ShiftSchedule::query()->with('creator')->latest('year')->latest('month')->latest('id');
+        $query = ShiftSchedule::query()->with(['creator', 'division'])->latest('year')->latest('month')->latest('id');
 
         if ($q = $request->string('q')->toString()) {
             $query->where('schedule_number', 'like', "%{$q}%");
@@ -40,7 +43,13 @@ class ShiftScheduleController extends Controller
             return $redirect;
         }
 
+        $selectedDivisionId = $request->integer('division_id') ?: (int) old('division_id');
+        $coreEmployees = $this->coreEmployeesByDivision($selectedDivisionId > 0 ? $selectedDivisionId : null);
+
         return view('administration.shift-schedules.create', [
+            'divisions' => Division::query()->orderBy('name')->get(),
+            'selectedDivisionId' => $selectedDivisionId > 0 ? $selectedDivisionId : null,
+            'coreEmployees' => $coreEmployees,
             'plannings' => ManpowerPlanning::query()->latest('planning_date')->take(20)->get(),
         ]);
     }
@@ -52,17 +61,63 @@ class ShiftScheduleController extends Controller
         }
 
         $data = $request->validate([
-            'month' => ['required', 'integer', 'min:1', 'max:12'],
-            'year' => ['required', 'integer', 'min:2020', 'max:2100'],
+            'division_id' => ['required', 'exists:divisions,id'],
+            'period_start_date' => ['required', 'date'],
+            'period_end_date' => ['required', 'date', 'after_or_equal:period_start_date'],
+            'selected_employees' => ['required', 'array', 'min:1'],
+            'selected_employees.*' => ['required', 'integer', 'exists:employees,id'],
+            'initial_shift_map' => ['nullable', 'array'],
             'manpower_planning_id' => ['nullable', 'exists:manpower_plannings,id'],
             'notes' => ['nullable', 'string'],
         ]);
 
+        $startDate = Carbon::parse((string) $data['period_start_date'])->startOfDay();
+        $endDate = Carbon::parse((string) $data['period_end_date'])->startOfDay();
+        $employeeIds = collect($data['selected_employees'])->map(fn ($id) => (int) $id)->unique()->values();
+
+        $eligibleEmployeeIds = $this->coreEmployeesByDivision((int) $data['division_id'])
+            ->whereIn('id', $employeeIds->all())
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (count($eligibleEmployeeIds) !== $employeeIds->count()) {
+            return back()->withInput()->with('error', 'Sebagian employee tidak valid untuk Division terpilih atau bukan Core Employee.');
+        }
+
+        $overlap = $this->findOverlappingAssignment($eligibleEmployeeIds, $startDate, $endDate);
+
+        if ($overlap) {
+            $name = $overlap->employee?->employee_name ?? ('Employee #'.$overlap->employee_id);
+
+            return back()->withInput()->with('error', "Jadwal bentrok: {$name} sudah memiliki schedule pada {$overlap->date}.");
+        }
+
+        $initialShiftMap = collect($data['initial_shift_map'] ?? [])
+            ->mapWithKeys(fn ($shift, $employeeId) => [(int) $employeeId => strtoupper((string) $shift)])
+            ->map(fn ($shift) => in_array($shift, ['S1', 'S2'], true) ? $shift : 'S1')
+            ->only($employeeIds->all())
+            ->all();
+
+        foreach ($employeeIds as $employeeId) {
+            if (! isset($initialShiftMap[$employeeId])) {
+                $initialShiftMap[$employeeId] = 'S1';
+            }
+        }
+
+        $year = (int) $startDate->year;
+        $month = (int) $startDate->month;
+
         $schedule = ShiftSchedule::query()->create([
-            'schedule_number' => $this->generateScheduleNumber((int) $data['year'], (int) $data['month']),
-            'month' => (int) $data['month'],
-            'year' => (int) $data['year'],
+            'schedule_number' => $this->generateScheduleNumber($year, $month),
+            'month' => $month,
+            'year' => $year,
+            'period_start_date' => $startDate->toDateString(),
+            'period_end_date' => $endDate->toDateString(),
             'status' => 'DRAFT',
+            'division_id' => (int) $data['division_id'],
+            'selected_employee_ids' => $employeeIds->all(),
+            'initial_shift_map' => $initialShiftMap,
             'manpower_planning_id' => $data['manpower_planning_id'] ?? null,
             'notes' => $data['notes'] ?? null,
             'created_by' => Auth::id(),
@@ -72,7 +127,7 @@ class ShiftScheduleController extends Controller
 
         return redirect()
             ->route('administration.shift-schedules.show', $schedule)
-            ->with('success', 'Monthly shift schedule generated.');
+            ->with('success', 'Shifting schedule generated.');
     }
 
     public function show(Request $request, ShiftSchedule $shiftSchedule)
@@ -81,11 +136,12 @@ class ShiftScheduleController extends Controller
             return $redirect;
         }
 
-        $shiftSchedule->load(['details.employee', 'details.position', 'manpowerPlanning', 'creator']);
+        $shiftSchedule->load(['details.employee', 'details.position', 'manpowerPlanning', 'creator', 'division']);
 
         return view('administration.shift-schedules.show', [
             'schedule' => $shiftSchedule,
             'employees' => $shiftSchedule->details->unique('employee_id')->sortBy(fn ($d) => $d->employee?->employee_code ?? ''),
+            'dateColumns' => $this->dateColumns($shiftSchedule),
             'validation' => $this->service->validate($shiftSchedule),
             'timeline' => $this->service->timeline($shiftSchedule),
             'shifts' => $this->service->assignableShifts(),
@@ -100,6 +156,25 @@ class ShiftScheduleController extends Controller
 
         if ($shiftSchedule->status === 'FINAL') {
             return back()->with('error', 'Final schedule cannot be regenerated.');
+        }
+
+        $periodStart = $shiftSchedule->period_start_date
+            ? Carbon::parse($shiftSchedule->period_start_date)
+            : Carbon::create($shiftSchedule->year, $shiftSchedule->month, 1)->startOfDay();
+        $periodEnd = $shiftSchedule->period_end_date
+            ? Carbon::parse($shiftSchedule->period_end_date)
+            : $periodStart->copy()->endOfMonth();
+        $overlap = $this->findOverlappingAssignment(
+            collect($shiftSchedule->selected_employee_ids ?? [])->map(fn ($id) => (int) $id)->all(),
+            $periodStart,
+            $periodEnd,
+            $shiftSchedule->id,
+        );
+
+        if ($overlap) {
+            $name = $overlap->employee?->employee_name ?? ('Employee #'.$overlap->employee_id);
+
+            return back()->with('error', "Regenerate diblokir: {$name} sudah memiliki schedule lain pada {$overlap->date}.");
         }
 
         $this->service->generate($shiftSchedule);
@@ -136,21 +211,44 @@ class ShiftScheduleController extends Controller
             return $redirect;
         }
 
-        $next = Carbon::create($shiftSchedule->year, $shiftSchedule->month, 1)->addMonth();
+        $periodStart = $shiftSchedule->period_start_date
+            ? Carbon::parse($shiftSchedule->period_start_date)
+            : Carbon::create($shiftSchedule->year, $shiftSchedule->month, 1);
+        $periodEnd = $shiftSchedule->period_end_date
+            ? Carbon::parse($shiftSchedule->period_end_date)
+            : $periodStart->copy()->endOfMonth();
+        $days = $periodStart->diffInDays($periodEnd);
+        $nextStart = $periodEnd->copy()->addDay();
+        $nextEnd = $nextStart->copy()->addDays($days);
 
         $duplicate = $shiftSchedule->replicate(['schedule_number', 'status', 'created_by', 'updated_by', 'finalized_by', 'finalized_at', 'created_at', 'updated_at']);
-        $duplicate->schedule_number = $this->generateScheduleNumber($next->year, $next->month);
-        $duplicate->month = $next->month;
-        $duplicate->year = $next->year;
+        $duplicate->schedule_number = $this->generateScheduleNumber($nextStart->year, $nextStart->month);
+        $duplicate->month = $nextStart->month;
+        $duplicate->year = $nextStart->year;
+        $duplicate->period_start_date = $nextStart->toDateString();
+        $duplicate->period_end_date = $nextEnd->toDateString();
         $duplicate->status = 'DRAFT';
         $duplicate->created_by = Auth::id();
+
+        $overlap = $this->findOverlappingAssignment(
+            collect($duplicate->selected_employee_ids ?? [])->map(fn ($id) => (int) $id)->all(),
+            $nextStart,
+            $nextEnd,
+        );
+
+        if ($overlap) {
+            $name = $overlap->employee?->employee_name ?? ('Employee #'.$overlap->employee_id);
+
+            return back()->with('error', "Duplicate diblokir: {$name} sudah memiliki schedule pada {$overlap->date}.");
+        }
+
         $duplicate->save();
 
         $this->service->generate($duplicate);
 
         return redirect()
             ->route('administration.shift-schedules.show', $duplicate)
-            ->with('success', 'Schedule duplicated to '.$next->translatedFormat('F Y').'.');
+            ->with('success', 'Schedule duplicated to '.$nextStart->format('d M Y').' - '.$nextEnd->format('d M Y').'.');
     }
 
     public function print(Request $request, ShiftSchedule $shiftSchedule)
@@ -159,11 +257,12 @@ class ShiftScheduleController extends Controller
             return $redirect;
         }
 
-        $shiftSchedule->load(['details.employee', 'details.position', 'manpowerPlanning', 'creator']);
+        $shiftSchedule->load(['details.employee', 'details.position', 'manpowerPlanning', 'creator', 'division']);
 
         return view('administration.shift-schedules.print', [
             'schedule' => $shiftSchedule,
             'employees' => $shiftSchedule->details->unique('employee_id')->sortBy(fn ($d) => $d->employee?->employee_code ?? ''),
+            'dateColumns' => $this->dateColumns($shiftSchedule),
             'validation' => $this->service->validate($shiftSchedule),
             'definitions' => $this->service->definitions(),
         ]);
@@ -180,7 +279,7 @@ class ShiftScheduleController extends Controller
         return view('administration.shift-schedules.edit', [
             'schedule' => $shiftSchedule,
             'shifts' => $this->service->assignableShifts(),
-            'days' => $this->daysInMonth($shiftSchedule),
+            'dateColumns' => $this->dateColumns($shiftSchedule),
             'employees' => $shiftSchedule->details->unique('employee_id')->sortBy(fn ($d) => $d->employee?->employee_code ?? ''),
         ]);
     }
@@ -318,9 +417,65 @@ class ShiftScheduleController extends Controller
         return 'SHIFT-'.$year.str_pad((string) $month, 2, '0', STR_PAD_LEFT).'-'.str_pad((string) $next, 4, '0', STR_PAD_LEFT);
     }
 
-    private function daysInMonth(ShiftSchedule $schedule): int
+    private function dateColumns(ShiftSchedule $schedule): array
     {
-        return Carbon::create($schedule->year, $schedule->month, 1)->daysInMonth;
+        $dates = $schedule->details->pluck('date')->unique()->sort()->values();
+
+        if ($dates->isNotEmpty()) {
+            return $dates->all();
+        }
+
+        if (! $schedule->period_start_date || ! $schedule->period_end_date) {
+            return [];
+        }
+
+        $cursor = Carbon::parse($schedule->period_start_date)->startOfDay();
+        $end = Carbon::parse($schedule->period_end_date)->startOfDay();
+        $range = [];
+
+        while ($cursor->lte($end)) {
+            $range[] = $cursor->toDateString();
+            $cursor->addDay();
+        }
+
+        return $range;
+    }
+
+    private function coreEmployeesByDivision(?int $divisionId)
+    {
+        if (! $divisionId) {
+            return collect();
+        }
+
+        return Employee::query()
+            ->with(['position', 'division'])
+            ->where('status', 'ACTIVE')
+            ->where('employment_type', 'CORE_EMPLOYEE')
+            ->where('division_id', $divisionId)
+            ->orderBy('employee_code')
+            ->get();
+    }
+
+    private function findOverlappingAssignment(array $employeeIds, Carbon $startDate, Carbon $endDate, ?int $excludeScheduleId = null): ?ShiftScheduleDetail
+    {
+        if (empty($employeeIds)) {
+            return null;
+        }
+
+        return ShiftScheduleDetail::query()
+            ->select(['employee_id', 'date'])
+            ->whereIn('employee_id', $employeeIds)
+            ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->whereHas('schedule', function ($query) use ($excludeScheduleId) {
+                $query->where('status', '!=', 'CANCELLED');
+
+                if ($excludeScheduleId) {
+                    $query->where('id', '!=', $excludeScheduleId);
+                }
+            })
+            ->with('employee')
+            ->orderBy('date')
+            ->first();
     }
 
     private function ensureAdmin()

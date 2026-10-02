@@ -71,25 +71,35 @@ class ShiftScheduleService
         $calendars = WorkingCalendar::query()->get()->keyBy('day_of_week');
         $definitions = $this->definitions()->keyBy('code');
 
-        $rotating = $employees->where('shift_pattern', 'ROTATING')->sortBy('employee_code')->values();
-        $groupByEmployee = [];
-
-        foreach ($rotating as $index => $employee) {
-            $groupByEmployee[$employee->id] = $index % 2 === 0 ? 'A' : 'B';
-        }
-
-        $daysInMonth = Carbon::create($schedule->year, $schedule->month, 1)->daysInMonth;
+        $startDate = $schedule->period_start_date
+            ? Carbon::parse($schedule->period_start_date)->startOfDay()
+            : Carbon::create($schedule->year, $schedule->month, 1)->startOfDay();
+        $endDate = $schedule->period_end_date
+            ? Carbon::parse($schedule->period_end_date)->startOfDay()
+            : $startDate->copy()->endOfMonth()->startOfDay();
+        $startWeek = $startDate->copy()->startOfWeek(Carbon::MONDAY);
+        $initialShiftMap = collect($schedule->initial_shift_map ?? [])
+            ->mapWithKeys(fn ($value, $key) => [(int) $key => strtoupper((string) $value)])
+            ->all();
 
         $details = [];
 
         foreach ($employees as $employee) {
-            for ($day = 1; $day <= $daysInMonth; $day++) {
-                $date = Carbon::create($schedule->year, $schedule->month, $day);
+            $cursor = $startDate->copy();
+
+            while ($cursor->lte($endDate)) {
+                $date = $cursor->copy();
                 $dayOfWeek = $date->dayOfWeekIso;
                 $calendar = $calendars->get($dayOfWeek);
-                $weekNumber = intdiv($day - 1, 7) + 1;
+                $weekNumber = $startWeek->diffInWeeks($date->copy()->startOfWeek(Carbon::MONDAY)) + 1;
 
-                $shift = $this->resolveShift($employee, $weekNumber, $groupByEmployee[$employee->id] ?? null, $calendar, $dayOfWeek);
+                $shift = $this->resolveShift(
+                    $employee,
+                    $weekNumber,
+                    $calendar,
+                    $dayOfWeek,
+                    $initialShiftMap[$employee->id] ?? null,
+                );
 
                 $details[] = [
                     'employee_id' => $employee->id,
@@ -102,6 +112,8 @@ class ShiftScheduleService
                     'assignment_type' => $this->assignmentType($employee, $shift),
                     'is_override' => false,
                 ];
+
+                $cursor->addDay();
             }
         }
 
@@ -440,37 +452,59 @@ class ShiftScheduleService
      */
     private function activeEmployeesFor(ShiftSchedule $schedule): Collection
     {
-        $start = Carbon::create($schedule->year, $schedule->month, 1)->startOfDay();
-        $end = $start->copy()->endOfMonth();
+        $start = $schedule->period_start_date
+            ? Carbon::parse($schedule->period_start_date)->startOfDay()
+            : Carbon::create($schedule->year, $schedule->month, 1)->startOfDay();
+        $end = $schedule->period_end_date
+            ? Carbon::parse($schedule->period_end_date)->endOfDay()
+            : $start->copy()->endOfMonth();
 
-        return Employee::query()
+        $selectedEmployeeIds = collect($schedule->selected_employee_ids ?? [])->map(fn ($id) => (int) $id)->filter()->values();
+
+        $query = Employee::query()
             ->where('status', 'ACTIVE')
-            ->where(function ($query) use ($end) {
+            ->where('employment_type', 'CORE_EMPLOYEE')
+            ->orderBy('employee_code');
+
+        if ($schedule->division_id) {
+            $query->where('division_id', $schedule->division_id);
+        }
+
+        if ($selectedEmployeeIds->isNotEmpty()) {
+            $query->whereIn('id', $selectedEmployeeIds->all());
+        } else {
+            $query->where(function ($query) use ($end) {
                 $query->whereNull('employment_end_date')->orWhere('employment_end_date', '>=', $end->toDateString());
             })
-            ->where(function ($query) use ($start) {
-                $query->whereNull('employment_start_date')->orWhere('employment_start_date', '<=', $start->toDateString());
-            })
-            ->orderBy('employee_code')
-            ->get();
+                ->where(function ($query) use ($start) {
+                    $query->whereNull('employment_start_date')->orWhere('employment_start_date', '<=', $start->toDateString());
+                });
+        }
+
+        return $query->get();
     }
 
-    private function resolveShift(Employee $employee, int $weekNumber, ?string $group, ?WorkingCalendar $calendar, int $dayOfWeek): string
+    private function resolveShift(Employee $employee, int $weekNumber, ?WorkingCalendar $calendar, int $dayOfWeek, ?string $initialShift): string
     {
         if ($calendar && ! $calendar->is_working_day) {
             return self::SHIFT_OFF;
         }
 
-        $band = match ($employee->shift_pattern) {
-            'FIXED_S1' => self::SHIFT_S1,
-            'FIXED_S2' => self::SHIFT_S2,
-            default => $group === 'B'
-                ? ($weekNumber % 2 === 1 ? self::SHIFT_S2 : self::SHIFT_S1)
-                : ($weekNumber % 2 === 1 ? self::SHIFT_S1 : self::SHIFT_S2),
-        };
+        $initialBand = in_array($initialShift, [self::SHIFT_S1, self::SHIFT_S2], true)
+            ? $initialShift
+            : match ($employee->shift_pattern) {
+                'FIXED_S2' => self::SHIFT_S2,
+                default => self::SHIFT_S1,
+            };
+
+        $band = $weekNumber % 2 === 1
+            ? $initialBand
+            : ($initialBand === self::SHIFT_S1 ? self::SHIFT_S2 : self::SHIFT_S1);
 
         if ($dayOfWeek === Carbon::SATURDAY) {
-            return $band === self::SHIFT_S1 ? self::SHIFT_S1_SAT : self::SHIFT_S2_SAT;
+            $saturdayBand = $band === self::SHIFT_S1 ? self::SHIFT_S2 : self::SHIFT_S1;
+
+            return $saturdayBand === self::SHIFT_S1 ? self::SHIFT_S1_SAT : self::SHIFT_S2_SAT;
         }
 
         return $band;

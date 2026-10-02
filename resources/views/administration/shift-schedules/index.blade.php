@@ -8,8 +8,8 @@
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Scheduling</p>
-                    <h1 class="wims-page-title">Monthly Shift Schedules</h1>
-                    <p class="wims-page-subtitle">Jadwal shift bulanan Core Employee berdasarkan rotasi mingguan.</p>
+                    <h1 class="wims-page-title">Shifting Schedules</h1>
+                    <p class="wims-page-subtitle">Jadwal shift Core Employee berdasarkan Division, periode tanggal aktual, dan rotasi mingguan.</p>
                     <p class="wims-breadcrumb">Administration / Scheduling / Shift Schedules</p>
                 </div>
                 <div class="flex gap-2">
@@ -29,12 +29,19 @@
 
             <div class="mt-6 overflow-x-auto">
                 <table class="wims-table min-w-full text-left text-sm">
-                    <thead><tr><th>Schedule No</th><th>Period</th><th>Status</th><th>Created By</th><th>Action</th></tr></thead>
+                    <thead><tr><th>Schedule No</th><th>Division</th><th>Period</th><th>Status</th><th>Created By</th><th>Action</th></tr></thead>
                     <tbody>
                         @forelse ($rows as $row)
                             <tr>
                                 <td class="font-semibold text-slate-900">{{ $row->schedule_number }}</td>
-                                <td>{{ \Carbon\Carbon::create($row->year, $row->month, 1)->translatedFormat('F Y') }}</td>
+                                <td>{{ $row->division?->name ?? '-' }}</td>
+                                <td>
+                                    @if ($row->period_start_date && $row->period_end_date)
+                                        {{ \Carbon\Carbon::parse($row->period_start_date)->format('d M Y') }} - {{ \Carbon\Carbon::parse($row->period_end_date)->format('d M Y') }}
+                                    @else
+                                        {{ \Carbon\Carbon::create($row->year, $row->month, 1)->translatedFormat('F Y') }}
+                                    @endif
+                                </td>
                                 <td>
                                     @if ($row->status === 'FINAL')
                                         <span class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">FINAL</span>
@@ -57,7 +64,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="5"><div class="wims-empty-state">Belum ada shift schedule.</div></td></tr>
+                            <tr><td colspan="6"><div class="wims-empty-state">Belum ada shift schedule.</div></td></tr>
                         @endforelse
                     </tbody>
                 </table>

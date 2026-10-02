@@ -4,7 +4,6 @@
 
 @section('content')
     @php
-        $daysInMonth = \Carbon\Carbon::create($schedule->year, $schedule->month, 1)->daysInMonth;
         $detailMap = [];
         foreach ($schedule->details as $detail) {
             $detailMap[$detail->employee_id][$detail->date] = $detail;
@@ -35,7 +34,14 @@
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Shift Schedule</p>
                     <h1 class="wims-page-title">{{ $schedule->schedule_number }}</h1>
-                    <p class="wims-page-subtitle">{{ \Carbon\Carbon::create($schedule->year, $schedule->month, 1)->translatedFormat('F Y') }}</p>
+                    <p class="wims-page-subtitle">
+                        {{ $schedule->division?->name ?? 'Tanpa Division' }}
+                        @if ($schedule->period_start_date && $schedule->period_end_date)
+                            · {{ \Carbon\Carbon::parse($schedule->period_start_date)->format('d M Y') }} - {{ \Carbon\Carbon::parse($schedule->period_end_date)->format('d M Y') }}
+                        @else
+                            · {{ \Carbon\Carbon::create($schedule->year, $schedule->month, 1)->translatedFormat('F Y') }}
+                        @endif
+                    </p>
                     <p class="wims-breadcrumb">Administration / Scheduling / Shift Schedule</p>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -182,14 +188,18 @@
                         <span class="inline-flex rounded-full px-2 py-0.5 font-semibold {{ $badge[$code] ?? 'bg-slate-100 text-slate-700' }}">{{ $code }} = {{ $label }}</span>
                     @endforeach
                 </div>
+                <p class="mt-2 text-xs text-slate-600">S1 = 08:00-16:00, S2 = 14:00-22:00, Saturday short shift by master shift definition, Sunday = OFF.</p>
                 <div class="mt-2 overflow-x-auto">
                     <table class="wims-table min-w-full text-left text-sm">
                         <thead>
                             <tr>
-                                <th class="min-w-[10rem]">Employee</th>
-                                @for ($day = 1; $day <= $daysInMonth; $day++)
-                                    <th class="text-center">D{{ $day }}</th>
-                                @endfor
+                                <th class="min-w-40">Employee</th>
+                                @foreach ($dateColumns as $date)
+                                    <th class="text-center min-w-17">
+                                        <div>{{ \Carbon\Carbon::parse($date)->isoFormat('ddd') }}</div>
+                                        <div class="text-[11px] font-normal">{{ \Carbon\Carbon::parse($date)->format('d/m') }}</div>
+                                    </th>
+                                @endforeach
                             </tr>
                         </thead>
                         <tbody>
@@ -200,9 +210,8 @@
                                         <div>{{ $employee?->employee_name ?? '-' }}</div>
                                         <div class="text-xs font-normal text-slate-500">{{ $employee?->employee_code ?? $entry->employee_id }}</div>
                                     </td>
-                                    @for ($day = 1; $day <= $daysInMonth; $day++)
+                                    @foreach ($dateColumns as $date)
                                         @php
-                                            $date = \Carbon\Carbon::create($schedule->year, $schedule->month, $day)->toDateString();
                                             $detail = $detailMap[$entry->employee_id][$date] ?? null;
                                             $shift = $detail?->shift ?? 'OFF';
                                             $cls = $badge[$shift] ?? 'bg-slate-200 text-slate-700';
@@ -210,10 +219,10 @@
                                         <td class="text-center">
                                             <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold {{ $cls }}">{{ $shift }}</span>
                                         </td>
-                                    @endfor
+                                    @endforeach
                                 </tr>
                             @empty
-                                <tr><td colspan="{{ $daysInMonth + 1 }}"><div class="wims-empty-state">Belum ada detail schedule.</div></td></tr>
+                                <tr><td colspan="{{ count($dateColumns) + 1 }}"><div class="wims-empty-state">Belum ada detail schedule.</div></td></tr>
                             @endforelse
                         </tbody>
                     </table>
