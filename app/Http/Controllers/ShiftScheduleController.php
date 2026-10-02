@@ -405,6 +405,24 @@ class ShiftScheduleController extends Controller
         return back()->with('success', 'Handover job closed.');
     }
 
+    public function destroy(Request $request, ShiftSchedule $shiftSchedule)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        if ($shiftSchedule->status === 'FINAL') {
+            return back()->with('error', 'Final schedule cannot be deleted.');
+        }
+
+        $scheduleNumber = $shiftSchedule->schedule_number;
+        $shiftSchedule->delete();
+
+        return redirect()
+            ->route('administration.shift-schedules')
+            ->with('success', 'Schedule '.$scheduleNumber.' deleted.');
+    }
+
     private function assertHandoverBelongsTo(ShiftSchedule $shiftSchedule, ShiftHandover $shiftHandover): void
     {
         abort_unless($shiftHandover->shift_schedule_id === $shiftSchedule->id, 404);

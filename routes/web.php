@@ -149,6 +149,7 @@ Route::get('/administration/shift-schedules/{shiftSchedule}/handover', [ShiftSch
 Route::post('/administration/shift-schedules/{shiftSchedule}/handover', [ShiftScheduleController::class, 'storeHandover'])->name('administration.shift-schedules.handover.store');
 Route::post('/administration/shift-schedules/{shiftSchedule}/handover/{shiftHandover}/transfer', [ShiftScheduleController::class, 'transferHandover'])->name('administration.shift-schedules.handover.transfer');
 Route::post('/administration/shift-schedules/{shiftSchedule}/handover/{shiftHandover}/close', [ShiftScheduleController::class, 'closeHandover'])->name('administration.shift-schedules.handover.close');
+Route::post('/administration/shift-schedules/{shiftSchedule}/delete', [ShiftScheduleController::class, 'destroy'])->name('administration.shift-schedules.delete');
 Route::get('/administration/packing-productivity', [PackingProductivityController::class, 'index'])->name('administration.packing-productivity');
 Route::get('/administration/packing-productivity/import', [PackingProductivityController::class, 'import'])->name('administration.packing-productivity.import');
 Route::post('/administration/packing-productivity/import', [PackingProductivityController::class, 'upload'])->name('administration.packing-productivity.upload');

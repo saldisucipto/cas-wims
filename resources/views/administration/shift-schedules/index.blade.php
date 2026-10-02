@@ -60,6 +60,12 @@
                                             @csrf
                                             <button type="submit" class="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">Duplicate</button>
                                         </form>
+                                        @if ($row->status !== 'FINAL')
+                                            <form action="{{ route('administration.shift-schedules.delete', $row) }}" method="POST" onsubmit="return confirm('Delete this schedule?');">
+                                                @csrf
+                                                <button type="submit" class="rounded border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">Delete</button>
+                                            </form>
+                                        @endif
                                     </div>
                                 </td>
                             </tr>

@@ -61,6 +61,12 @@
                         @csrf
                         <button type="submit" class="wims-btn wims-btn-primary">Duplicate</button>
                     </form>
+                    @if ($schedule->status !== 'FINAL')
+                        <form action="{{ route('administration.shift-schedules.delete', $schedule) }}" method="POST" onsubmit="return confirm('Delete this schedule?');">
+                            @csrf
+                            <button type="submit" class="inline-flex items-center justify-center rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Delete</button>
+                        </form>
+                    @endif
                     <a href="{{ route('administration.shift-schedules.print', $schedule) }}" target="_blank" class="wims-btn wims-btn-primary">Print / PDF</a>
                     <a href="{{ route('administration.shift-schedules') }}" class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Back</a>
                 </div>
