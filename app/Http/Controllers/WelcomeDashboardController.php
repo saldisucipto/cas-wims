@@ -8,8 +8,8 @@ use App\Models\ConsumableRequestItem;
 use App\Models\PackingStation;
 use App\Models\RfDevice;
 use App\Models\SystemSetting;
-use App\Models\WorkingSession;
 use App\Models\WmsAccount;
+use App\Models\WorkingSession;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
@@ -154,13 +154,13 @@ class WelcomeDashboardController extends Controller
                 ],
                 [
                     'label' => 'Active Packing Stations',
-                    'value' => $activePackingStationsCount . ' / ' . $totalPackingStationsCount,
+                    'value' => $activePackingStationsCount.' / '.$totalPackingStationsCount,
                     'subvalue' => 'Station aktif dipakai',
                 ],
                 [
                     'label' => 'Active RF Devices',
-                    'value' => $activeRfDevicesCount . ' / ' . $totalRfDevicesCount,
-                    'subvalue' => $availableRfDevicesCount . ' tersedia',
+                    'value' => $activeRfDevicesCount.' / '.$totalRfDevicesCount,
+                    'subvalue' => $availableRfDevicesCount.' tersedia',
                 ],
                 [
                     'label' => 'Available WMS Accounts',
@@ -318,7 +318,7 @@ class WelcomeDashboardController extends Controller
             ->map(function (WorkingSession $session) {
                 return [
                     'time' => $session->started_at,
-                    'time_label' => $session->started_at?->format('H:i') ?? '-',
+                    'time_label' => $session->started_at?->timezone('Asia/Jakarta')->format('H:i') ?? '-',
                     'subject' => $session->dailyWorker?->name ?? '-',
                     'action' => 'Started Working Session',
                     'detail' => $session->packingStation?->name ?? ($session->rfDevice?->code ?? '-'),
@@ -334,7 +334,7 @@ class WelcomeDashboardController extends Controller
             ->map(function (WorkingSession $session) {
                 return [
                     'time' => $session->ended_at,
-                    'time_label' => $session->ended_at?->format('H:i') ?? '-',
+                    'time_label' => $session->ended_at?->timezone('Asia/Jakarta')->format('H:i') ?? '-',
                     'subject' => $session->dailyWorker?->name ?? '-',
                     'action' => 'Finished Working Session',
                     'detail' => $session->packingStation?->name ?? ($session->rfDevice?->code ?? '-'),
@@ -349,7 +349,7 @@ class WelcomeDashboardController extends Controller
             ->map(function (ConsumableRequest $request) {
                 return [
                     'time' => $request->requested_at,
-                    'time_label' => $request->requested_at?->format('H:i') ?? '-',
+                    'time_label' => $request->requested_at?->timezone('Asia/Jakarta')->format('H:i') ?? '-',
                     'subject' => $request->dailyWorker?->name ?? $request->request_number,
                     'action' => 'Requested Consumable',
                     'detail' => $request->status === 'Pending' ? 'Waiting Validation' : $request->status,
@@ -365,7 +365,7 @@ class WelcomeDashboardController extends Controller
             ->map(function (ConsumableRequest $request) {
                 return [
                     'time' => $request->validated_at,
-                    'time_label' => $request->validated_at?->format('H:i') ?? '-',
+                    'time_label' => $request->validated_at?->timezone('Asia/Jakarta')->format('H:i') ?? '-',
                     'subject' => $request->validator?->name ?? 'Leader',
                     'action' => 'Validated Consumable Request',
                     'detail' => $request->request_number,

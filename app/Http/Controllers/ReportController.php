@@ -29,10 +29,16 @@ class ReportController extends Controller
         $this->autoForceCloseCrossDayWorkingSessions();
 
         $filter = $this->resolveDateFilter($request);
+        $workerName = trim($request->string('worker_name')->toString());
 
         $query = WorkingSession::query()
             ->with(['dailyWorker', 'packingStation', 'rfDevice', 'wmsAccount'])
             ->whereBetween('started_at', [$filter['start'], $filter['end']])
+            ->when($workerName !== '', function ($builder) use ($workerName) {
+                $builder->whereHas('dailyWorker', function ($workerQuery) use ($workerName) {
+                    $workerQuery->whereRaw('LOWER(name) like ?', ['%'.strtolower($workerName).'%']);
+                });
+            })
             ->latest('started_at');
 
         $rows = $query->paginate(15)->withQueryString();
@@ -40,6 +46,11 @@ class ReportController extends Controller
         $allFilteredRows = WorkingSession::query()
             ->with('dailyWorker')
             ->whereBetween('started_at', [$filter['start'], $filter['end']])
+            ->when($workerName !== '', function ($builder) use ($workerName) {
+                $builder->whereHas('dailyWorker', function ($workerQuery) use ($workerName) {
+                    $workerQuery->whereRaw('LOWER(name) like ?', ['%'.strtolower($workerName).'%']);
+                });
+            })
             ->get();
 
         $totalMinutes = $allFilteredRows->sum(function (WorkingSession $session) {
@@ -53,6 +64,7 @@ class ReportController extends Controller
         return view('administration.reports.working-sessions', [
             'rows' => $rows,
             'filter' => $filter,
+            'workerName' => $workerName,
             'canForceClose' => in_array(Auth::user()?->role, ['Administrator', 'Leader'], true),
             'backRoute' => Auth::user()?->role === 'Leader' ? route('leader.panel') : route('administration.dashboard'),
             'summary' => [

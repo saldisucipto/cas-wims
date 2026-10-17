@@ -31,13 +31,22 @@
             @endif
 
             <form action="{{ route('administration.master.daily-workers') }}" method="GET"
-                class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-4">
-                <input name="q" value="{{ $filters['q'] ?? '' }}" placeholder="Search code/name..."
+                class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-6">
+                <input name="q" value="{{ $filters['q'] ?? '' }}" placeholder="Search code..."
+                    class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                <input name="worker_name" value="{{ $filters['worker_name'] ?? '' }}" placeholder="Search worker name..."
                     class="rounded-lg border border-slate-300 px-3 py-2 text-sm md:col-span-2">
                 <select name="status" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                     <option value="">All Status</option>
                     <option value="Active" @selected(($filters['status'] ?? '') === 'Active')>Active</option>
                     <option value="Inactive" @selected(($filters['status'] ?? '') === 'Inactive')>Inactive</option>
+                </select>
+                <select name="per_page" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="10" @selected(($filters['per_page'] ?? '10') === '10')>10 rows</option>
+                    <option value="25" @selected(($filters['per_page'] ?? '') === '25')>25 rows</option>
+                    <option value="50" @selected(($filters['per_page'] ?? '') === '50')>50 rows</option>
+                    <option value="100" @selected(($filters['per_page'] ?? '') === '100')>100 rows</option>
+                    <option value="all" @selected(($filters['per_page'] ?? '') === 'all')>Show All</option>
                 </select>
                 <button class="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white">Search</button>
             </form>

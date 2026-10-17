@@ -47,6 +47,26 @@
 
             <x-report-date-filter :action="route('administration.reports.working-sessions')" :filter="$filter" />
 
+            <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <form action="{{ route('administration.reports.working-sessions') }}" method="GET"
+                    class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <input type="hidden" name="period" value="{{ $filter['period'] ?? 'today' }}">
+                    <input type="hidden" name="start_date" value="{{ $filter['start_date'] ?? '' }}">
+                    <input type="hidden" name="end_date" value="{{ $filter['end_date'] ?? '' }}">
+                    <div>
+                        <label for="worker_name" class="mb-1 block text-sm font-semibold text-slate-700">Cari Nama Worker</label>
+                        <input id="worker_name" name="worker_name" type="text" value="{{ $workerName ?? '' }}"
+                            placeholder="Contoh: Budi"
+                            class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="submit" class="wims-btn wims-btn-primary">Cari</button>
+                        <a href="{{ route('administration.reports.working-sessions', ['period' => $filter['period'] ?? 'today', 'start_date' => $filter['start_date'] ?? null, 'end_date' => $filter['end_date'] ?? null]) }}"
+                            class="inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Reset Nama</a>
+                    </div>
+                </form>
+            </div>
+
             <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p class="text-sm font-semibold text-slate-700">Periode Laporan</p>
                 <p class="mt-1 text-sm text-slate-600">{{ $filter['label'] }}</p>

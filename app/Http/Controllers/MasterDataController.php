@@ -387,6 +387,8 @@ class MasterDataController extends Controller
         $query = DailyWorker::query()->orderBy('employee_code');
 
         $keyword = trim($request->string('q')->toString());
+        $workerName = trim($request->string('worker_name')->toString());
+        $workerName = preg_replace('/\s+/', ' ', str_replace('_', ' ', $workerName)) ?? '';
 
         if ($keyword !== '') {
             $query->where(function ($builder) use ($keyword) {
@@ -395,13 +397,35 @@ class MasterDataController extends Controller
             });
         }
 
+        if ($workerName !== '') {
+            $query->whereRaw('LOWER(name) like ?', ['%'.strtolower($workerName).'%']);
+        }
+
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
         }
 
+        $isSearching = $keyword !== '' || $workerName !== '';
+        $requestedPerPage = strtolower(trim($request->string('per_page')->toString()));
+        $allowedPerPage = ['10', '25', '50', '100', 'all'];
+
+        if (! in_array($requestedPerPage, $allowedPerPage, true)) {
+            $requestedPerPage = $isSearching ? 'all' : '10';
+        }
+
+        if ($requestedPerPage === 'all') {
+            $totalRows = (clone $query)->count();
+            $rows = $query->paginate(max(1, $totalRows))->withQueryString();
+        } else {
+            $rows = $query->paginate((int) $requestedPerPage)->withQueryString();
+        }
+
         return view('administration.master.daily-workers', [
-            'rows' => $query->paginate(10)->withQueryString(),
-            'filters' => $request->only('q', 'status'),
+            'rows' => $rows,
+            'filters' => [
+                ...$request->only('q', 'worker_name', 'status'),
+                'per_page' => $requestedPerPage,
+            ],
             'importHeaders' => self::DAILY_WORKER_IMPORT_HEADERS,
         ]);
     }
