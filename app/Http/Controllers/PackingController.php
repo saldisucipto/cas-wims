@@ -7,8 +7,8 @@ use App\Models\ConsumableRequest;
 use App\Models\DailyWorker;
 use App\Models\PackingStation;
 use App\Models\RfDevice;
-use App\Models\WorkingSession;
 use App\Models\WmsAccount;
+use App\Models\WorkingSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -125,7 +125,7 @@ class PackingController extends Controller
         }
 
         $nextNumber = (ConsumableRequest::max('id') ?? 0) + 1;
-        $requestNumber = 'REQ-' . str_pad((string) $nextNumber, 3, '0', STR_PAD_LEFT);
+        $requestNumber = 'REQ-'.str_pad((string) $nextNumber, 3, '0', STR_PAD_LEFT);
 
         $consumableRequest = ConsumableRequest::create([
             'request_number' => $requestNumber,
@@ -261,7 +261,29 @@ class PackingController extends Controller
 
             $wmsAccount = null;
 
-            if ($station->wms_account_id) {
+            $dedicatedWmsAccount = WmsAccount::query()
+                ->lockForUpdate()
+                ->where('daily_worker_id', $worker->id)
+                ->where('status', '!=', 'Disabled')
+                ->orderBy('id')
+                ->first();
+
+            if ($dedicatedWmsAccount) {
+                $wmsUsed = WorkingSession::query()
+                    ->lockForUpdate()
+                    ->where('wms_account_id', $dedicatedWmsAccount->id)
+                    ->where('status', 'Working')
+                    ->where('daily_worker_id', '!=', $worker->id)
+                    ->exists();
+
+                if ($wmsUsed) {
+                    throw new RuntimeException('Dedicated WMS Account untuk worker ini sedang digunakan oleh sesi lain.');
+                }
+
+                $wmsAccount = $dedicatedWmsAccount;
+            }
+
+            if (! $wmsAccount && $station->wms_account_id) {
                 $wmsAccount = WmsAccount::query()->lockForUpdate()->find($station->wms_account_id);
 
                 if (! $wmsAccount || $wmsAccount->status !== 'Available') {
@@ -277,7 +299,9 @@ class PackingController extends Controller
                 if ($wmsUsed) {
                     throw new RuntimeException('This WMS Account is currently assigned to another employee.');
                 }
-            } else {
+            }
+
+            if (! $wmsAccount) {
                 $wmsAccount = WmsAccount::query()
                     ->lockForUpdate()
                     ->where('status', 'Available')
@@ -341,7 +365,11 @@ class PackingController extends Controller
                 $wmsAccount = WmsAccount::query()->lockForUpdate()->find($session->wms_account_id);
 
                 if ($wmsAccount) {
-                    $wmsAccount->update(['status' => 'Available']);
+                    if ($wmsAccount->daily_worker_id) {
+                        $wmsAccount->update(['status' => 'Assigned']);
+                    } else {
+                        $wmsAccount->update(['status' => 'Available']);
+                    }
                 }
             }
         });

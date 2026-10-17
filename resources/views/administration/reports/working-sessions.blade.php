@@ -14,6 +14,16 @@
                     <p class="wims-breadcrumb">Administration / Reports / Working Session Report</p>
                 </div>
                 <div class="flex gap-2">
+                    @if ($canForceClose)
+                        <form method="POST" action="{{ route('administration.reports.working-sessions.force-close-all') }}"
+                            class="force-close-all-form inline-block">
+                            @csrf
+                            <button type="submit"
+                                class="wims-btn inline-flex items-center justify-center border-red-600 bg-red-600 text-white hover:bg-red-700">
+                                Force Close All
+                            </button>
+                        </form>
+                    @endif
                     <button id="exportWorkingSessions" type="button" class="wims-btn wims-btn-success">Export</button>
                     <a href="{{ $backRoute }}"
                         class="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Back</a>
@@ -60,7 +70,7 @@
                     <tbody>
                         @forelse ($rows as $row)
                             <tr>
-                                <td>{{ $row->started_at?->format('d M Y H:i') }}</td>
+                                <td>{{ $row->started_at?->timezone('Asia/Jakarta')->format('d M Y H:i') }}</td>
                                 <td>{{ $row->dailyWorker?->name ?? '-' }}</td>
                                 <td>{{ ucfirst($row->session_type) }}</td>
                                 <td>{{ $row->packingStation?->name ?? '-' }}</td>
@@ -147,10 +157,39 @@
                 });
             });
 
+            $('.force-close-all-form').on('submit', function(event) {
+                event.preventDefault();
+
+                const form = this;
+
+                Swal.fire({
+                    title: 'Force Close All Working Sessions',
+                    text: 'This action will immediately terminate all active working sessions and release all assigned resources. This action should only be performed in emergency situations.',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    cancelButtonText: 'Cancel',
+                    confirmButtonText: 'Force Close All',
+                    confirmButtonColor: '#dc2626'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        form.submit();
+                    }
+                });
+            });
+
             @if (session('success_force_close'))
                 Swal.fire({
                     title: 'Working Session Closed',
                     text: 'The Working Session has been forcefully closed. All assigned resources have been released and are now available for use.',
+                    icon: 'success',
+                    confirmButtonText: 'OK'
+                });
+            @endif
+
+            @if (session('success_force_close_all'))
+                Swal.fire({
+                    title: 'All Working Sessions Closed',
+                    text: '{{ session('success_force_close_all') }} active working sessions have been forcefully closed. All assigned resources are now available for use.',
                     icon: 'success',
                     confirmButtonText: 'OK'
                 });

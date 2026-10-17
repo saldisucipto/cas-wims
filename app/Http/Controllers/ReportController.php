@@ -106,7 +106,11 @@ class ReportController extends Controller
                     $wmsAccount = $session->wmsAccount()->lockForUpdate()->first();
 
                     if ($wmsAccount) {
-                        $wmsAccount->update(['status' => 'Available']);
+                        if ($wmsAccount->daily_worker_id) {
+                            $wmsAccount->update(['status' => 'Assigned']);
+                        } else {
+                            $wmsAccount->update(['status' => 'Available']);
+                        }
                     }
                 }
 
@@ -134,6 +138,86 @@ class ReportController extends Controller
         }
 
         return back()->with('success_force_close', true);
+    }
+
+    public function forceCloseAllWorkingSessions(Request $request)
+    {
+        if (! Auth::check() || ! in_array(Auth::user()->role, ['Administrator', 'Leader'], true)) {
+            return redirect()->route('administration.login')->with('error', 'Anda tidak memiliki akses untuk melakukan force close session.');
+        }
+
+        $closedCount = 0;
+
+        DB::transaction(function () use (&$closedCount) {
+            $activeSessions = WorkingSession::query()
+                ->with(['dailyWorker', 'packingStation', 'rfDevice', 'wmsAccount'])
+                ->where('status', 'Working')
+                ->lockForUpdate()
+                ->get();
+
+            if ($activeSessions->isEmpty()) {
+                return;
+            }
+
+            $now = now();
+
+            foreach ($activeSessions as $session) {
+                if ($session->packing_station_id) {
+                    $station = $session->packingStation()->lockForUpdate()->first();
+
+                    if ($station) {
+                        $station->update(['status' => 'Available']);
+                    }
+                }
+
+                if ($session->rf_device_id) {
+                    $device = $session->rfDevice()->lockForUpdate()->first();
+
+                    if ($device) {
+                        $device->update(['status' => 'Available']);
+                    }
+                }
+
+                if ($session->wms_account_id) {
+                    $wmsAccount = $session->wmsAccount()->lockForUpdate()->first();
+
+                    if ($wmsAccount) {
+                        if ($wmsAccount->daily_worker_id) {
+                            $wmsAccount->update(['status' => 'Assigned']);
+                        } else {
+                            $wmsAccount->update(['status' => 'Available']);
+                        }
+                    }
+                }
+
+                $session->update([
+                    'status' => 'Closed',
+                    'ended_at' => $now,
+                    'close_type' => 'Force Close',
+                    'force_closed_by' => Auth::id(),
+                    'force_closed_at' => $now,
+                    'force_close_reason' => 'Force Closed All by Administrator',
+                ]);
+
+                Log::warning('Force Closed Working Session (Bulk)', [
+                    'actor' => Auth::user()?->name,
+                    'actor_role' => Auth::user()?->role,
+                    'session_id' => $session->id,
+                    'employee' => $session->dailyWorker?->name,
+                    'rf_device' => $session->rfDevice?->code,
+                    'packing_station' => $session->packingStation?->name,
+                    'closed_at' => $now->format('d F Y H:i'),
+                ]);
+
+                $closedCount++;
+            }
+        });
+
+        if ($closedCount === 0) {
+            return back()->with('error', 'Tidak ada sesi kerja aktif untuk di-force close.');
+        }
+
+        return back()->with('success_force_close_all', $closedCount);
     }
 
     private function autoForceCloseCrossDayWorkingSessions(): void
@@ -186,7 +270,11 @@ class ReportController extends Controller
                     $wmsAccount = $session->wmsAccount()->lockForUpdate()->first();
 
                     if ($wmsAccount) {
-                        $wmsAccount->update(['status' => 'Available']);
+                        if ($wmsAccount->daily_worker_id) {
+                            $wmsAccount->update(['status' => 'Assigned']);
+                        } else {
+                            $wmsAccount->update(['status' => 'Available']);
+                        }
                     }
                 }
 
