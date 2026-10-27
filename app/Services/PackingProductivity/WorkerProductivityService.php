@@ -363,7 +363,7 @@ class WorkerProductivityService
             return $row;
         }, array_values($rows));
 
-        usort($result, fn (array $a, array $b) => [$b['items'], $b['orders']] <=> [$a['items'], $a['orders']]);
+        usort($result, fn (array $a, array $b) => [$b['orders'], $b['items']] <=> [$a['orders'], $a['items']]);
 
         $dataUntil = $this->latestSyncedAt();
 

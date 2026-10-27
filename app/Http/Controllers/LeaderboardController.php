@@ -47,7 +47,7 @@ class LeaderboardController extends Controller
         // A scoreboard only ranks people who actually produced output.
         $rows = array_values(array_filter(
             $board['rows'],
-            fn (array $row) => ($row['items'] ?? 0) > 0,
+            fn (array $row) => ($row['orders'] ?? 0) > 0,
         ));
 
         $types = $this->packingProductivity->typesForRole($role) ?? [];
@@ -61,8 +61,8 @@ class LeaderboardController extends Controller
             'active' => collect($board['rows'])->contains(fn (array $row) => (bool) ($row['is_working'] ?? false)),
             'data_until' => $board['data_until'],
             'totals' => [
-                'items' => array_sum(array_column($rows, 'items')),
                 'orders' => array_sum(array_column($rows, 'orders')),
+                'items' => array_sum(array_column($rows, 'items')),
                 'lines' => array_sum(array_column($rows, 'lines')),
                 'workers' => count($rows),
             ],

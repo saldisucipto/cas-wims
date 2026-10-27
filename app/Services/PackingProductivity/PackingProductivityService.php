@@ -760,7 +760,7 @@ class PackingProductivityService
             ];
         }
 
-        usort($result, fn ($a, $b) => $b['items'] <=> $a['items']);
+        usort($result, fn ($a, $b) => [$b['orders'], $b['items']] <=> [$a['orders'], $a['items']]);
 
         return $result;
     }

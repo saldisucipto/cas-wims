@@ -79,7 +79,7 @@ test('leaderboard page is public', function () {
         ->assertSee('Leaderboard Productivity');
 });
 
-test('leaderboard ranks workers by items produced', function () {
+test('leaderboard ranks workers by orders produced', function () {
     $top = boardWorker('TOP PACKER');
     $topSession = boardSession($top, 'CA1OPS001');
     boardTransaction($topSession, 'TR-1', 'DOC-A', 10, 120);
@@ -94,8 +94,8 @@ test('leaderboard ranks workers by items produced', function () {
 
     expect($board['rows'])->toHaveCount(2)
         ->and($board['rows'][0]['name'])->toBe('TOP PACKER')
-        ->and($board['rows'][0]['items'])->toBe(25.0)
         ->and($board['rows'][0]['orders'])->toBe(2)
+        ->and($board['rows'][0]['items'])->toBe(25.0)
         ->and($board['rows'][1]['name'])->toBe('SECOND PACKER');
 
     $this->get(route('leaderboard.productivity'))

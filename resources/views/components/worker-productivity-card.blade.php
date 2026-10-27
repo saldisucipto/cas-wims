@@ -49,31 +49,31 @@
     @endif
 
     <div class="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
+        <div class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+            <p class="text-blue-700">Orders</p>
+            <p class="mt-1 text-2xl font-bold text-blue-800">{{ number_format($productivity['orders'] ?? 0) }}</p>
+        </div>
         <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
             <p class="text-slate-500">Items</p>
             <p class="mt-1 text-2xl font-bold text-slate-900">{{ number_format($productivity['items'] ?? 0) }}</p>
-        </div>
-        <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-            <p class="text-slate-500">Orders</p>
-            <p class="mt-1 text-2xl font-bold text-slate-900">{{ number_format($productivity['orders'] ?? 0) }}</p>
         </div>
         <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
             <p class="text-slate-500">SKU Lines</p>
             <p class="mt-1 text-2xl font-bold text-slate-900">{{ number_format($productivity['lines'] ?? 0) }}</p>
         </div>
         <div class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
-            <p class="text-blue-700">Items / Hour</p>
+            <p class="text-blue-700">Orders / Hour</p>
             <p class="mt-1 text-2xl font-bold text-blue-800">
-                {{ ($productivity['items_per_hour'] ?? null) !== null ? number_format($productivity['items_per_hour'], 1) : '—' }}
+                {{ ($productivity['orders_per_hour'] ?? null) !== null ? number_format($productivity['orders_per_hour'], 1) : '—' }}
             </p>
         </div>
     </div>
 
     <div class="mt-3 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
         <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
-            <p class="text-slate-500">Orders / Hour</p>
+            <p class="text-slate-500">Items / Hour</p>
             <p class="mt-1 font-semibold text-slate-900">
-                {{ ($productivity['orders_per_hour'] ?? null) !== null ? number_format($productivity['orders_per_hour'], 1) : '—' }}
+                {{ ($productivity['items_per_hour'] ?? null) !== null ? number_format($productivity['items_per_hour'], 1) : '—' }}
             </p>
         </div>
         <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">

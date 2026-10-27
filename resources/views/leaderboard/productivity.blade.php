@@ -46,7 +46,7 @@
                         $chip = $isPicker
                             ? 'border-blue-200 bg-blue-50 text-blue-700'
                             : 'border-emerald-200 bg-emerald-50 text-emerald-700';
-                        $maxItems = max(1, (int) collect($board['rows'])->max('items'));
+                        $maxOrders = max(1, (int) collect($board['rows'])->max('orders'));
                         $hasActive = (bool) ($board['active'] ?? false);
                     @endphp
 
@@ -68,13 +68,13 @@
                         </div>
 
                         <div class="mt-3 grid grid-cols-3 gap-2 px-5">
+                            <div class="rounded-lg border {{ $isPicker ? 'border-blue-200 bg-blue-50' : 'border-emerald-200 bg-emerald-50' }} px-3 py-2">
+                                <p class="text-[11px] text-slate-500">Orders</p>
+                                <p class="text-lg font-bold {{ $accentText }}">{{ number_format($board['totals']['orders']) }}</p>
+                            </div>
                             <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                                 <p class="text-[11px] text-slate-500">Items</p>
                                 <p class="text-lg font-bold text-slate-900">{{ number_format($board['totals']['items']) }}</p>
-                            </div>
-                            <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                                <p class="text-[11px] text-slate-500">Orders</p>
-                                <p class="text-lg font-bold text-slate-900">{{ number_format($board['totals']['orders']) }}</p>
                             </div>
                             <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                                 <p class="text-[11px] text-slate-500">Workers</p>
@@ -84,7 +84,10 @@
 
                         <div class="mt-3 max-h-[30rem] divide-y divide-slate-100 overflow-y-auto border-t border-slate-100">
                             @forelse ($board['rows'] as $index => $row)
-                                @php $rank = $index + 1; @endphp
+                                @php
+                                    $rank = $index + 1;
+                                    $pct = $row['orders'] > 0 ? max(3, round($row['orders'] / $maxOrders * 100)) : 0;
+                                @endphp
                                 <div class="flex items-center gap-3 px-5 py-2.5">
                                     <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold
                                         {{ $rank === 1 ? 'bg-amber-100 text-amber-800' : ($rank === 2 ? 'bg-slate-200 text-slate-700' : ($rank === 3 ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-500')) }}">
@@ -95,8 +98,8 @@
                                         <div class="flex items-baseline justify-between gap-3">
                                             <p class="truncate text-sm font-semibold text-slate-900">{{ $row['name'] }}</p>
                                             <p class="shrink-0 text-sm font-bold tabular-nums text-slate-900">
-                                                {{ number_format($row['items']) }}
-                                                <span class="text-[10px] font-medium text-slate-400">items</span>
+                                                {{ number_format($row['orders']) }}
+                                                <span class="text-[10px] font-medium text-slate-400">orders</span>
                                             </p>
                                         </div>
                                         <div class="mt-0.5 flex items-center justify-between gap-3 text-[11px] text-slate-500">
@@ -107,15 +110,16 @@
                                                 @endif
                                             </span>
                                             <span class="flex shrink-0 items-center gap-2">
-                                                {{ $row['items_per_hour'] !== null ? number_format($row['items_per_hour'], 1).'/jam' : '—' }}
+                                                {{ number_format($row['items']) }} items
+                                                &middot;
+                                                {{ $row['orders_per_hour'] !== null ? number_format($row['orders_per_hour'], 1).' order/jam' : '—' }}
                                                 @if ($row['is_working'])
                                                     <span class="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">aktif</span>
                                                 @endif
                                             </span>
                                         </div>
                                         <div class="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-100">
-                                            <div class="h-full rounded-full {{ $accentBar }}"
-                                                style="width: {{ $row['items'] > 0 ? max(3, round($row['items'] / $maxItems * 100)) : 0 }}%"></div>
+                                            <div class="h-full rounded-full {{ $accentBar }}" style="width: {{ $pct }}%"></div>
                                         </div>
                                     </div>
                                 </div>
