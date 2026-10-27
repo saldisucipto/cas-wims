@@ -15,6 +15,11 @@ class ManpowerPlanning extends Model
         'inbound_volume',
         'outbound_volume',
         'vas_volume',
+        'productivity_period_start',
+        'productivity_period_end',
+        'picker_headcount',
+        'packer_headcount',
+        'recommendation_source',
         'shift_duration',
         'non_productive_hours',
         'effective_working_hours',
@@ -34,6 +39,10 @@ class ManpowerPlanning extends Model
             'inbound_volume' => 'integer',
             'outbound_volume' => 'integer',
             'vas_volume' => 'integer',
+            'productivity_period_start' => 'date',
+            'productivity_period_end' => 'date',
+            'picker_headcount' => 'integer',
+            'packer_headcount' => 'integer',
             'shift_duration' => 'float',
             'non_productive_hours' => 'float',
             'effective_working_hours' => 'float',
@@ -50,6 +59,11 @@ class ManpowerPlanning extends Model
     public function devices()
     {
         return $this->hasMany(ManpowerPlanningDevice::class);
+    }
+
+    public function recommendations()
+    {
+        return $this->hasMany(ManpowerPlanningRecommendation::class)->orderBy('sort_order');
     }
 
     public function creator()

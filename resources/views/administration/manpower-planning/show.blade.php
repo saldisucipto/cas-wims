@@ -120,6 +120,95 @@
                 @endforeach
             </div>
 
+            @php
+                $hasRecommendations = ! empty($recommendationGroups['picker']) || ! empty($recommendationGroups['packer']);
+            @endphp
+
+            @if ($hasRecommendations)
+                <div class="mt-6">
+                    <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                        <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Rekomendasi Tenaga Kerja</h3>
+                        @if ($planning->productivity_period_start && $planning->productivity_period_end)
+                            <p class="text-xs text-slate-500">
+                                Basis historis produktivitas:
+                                <span class="font-semibold text-slate-700">
+                                    {{ $planning->productivity_period_start->format('d M Y') }} &ndash;
+                                    {{ $planning->productivity_period_end->format('d M Y') }}
+                                </span>
+                            </p>
+                        @endif
+                    </div>
+
+                    <div class="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        @foreach (['picker' => 'Picker', 'packer' => 'Packer'] as $roleKey => $roleLabel)
+                            @php
+                                $workers = $recommendationGroups[$roleKey];
+                                $headcount = $roleKey === 'picker' ? $planning->picker_headcount : $planning->packer_headcount;
+                                $accent = $roleKey === 'picker' ? 'border-blue-200' : 'border-emerald-200';
+                                $accentBg = $roleKey === 'picker' ? 'bg-blue-50' : 'bg-emerald-50';
+                                $accentText = $roleKey === 'picker' ? 'text-blue-700' : 'text-emerald-700';
+                            @endphp
+
+                            <article class="overflow-hidden rounded-xl border {{ $accent }} bg-white">
+                                <div class="flex items-center justify-between {{ $accentBg }} px-4 py-2.5">
+                                    <p class="text-sm font-bold {{ $accentText }}">{{ $roleLabel }}</p>
+                                    <p class="text-sm text-slate-600">
+                                        Rekomendasi:
+                                        <span class="font-bold text-slate-900">{{ $headcount ?? '—' }} orang</span>
+                                    </p>
+                                </div>
+
+                                @if (empty($workers))
+                                    <p class="px-4 py-6 text-center text-sm text-slate-500">
+                                        Belum ada rekomendasi nama untuk {{ $roleLabel }} pada planning ini.
+                                    </p>
+                                @else
+                                    <div class="overflow-x-auto">
+                                        <table class="wims-table min-w-full text-left text-sm">
+                                            <thead>
+                                                <tr>
+                                                    <th>#</th>
+                                                    <th>Nama DW</th>
+                                                    <th>Histori</th>
+                                                    <th>Order/jam</th>
+                                                    <th>Kapasitas</th>
+                                                    <th>Alokasi</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach ($workers as $index => $worker)
+                                                    <tr>
+                                                        <td class="font-semibold text-slate-500">{{ $index + 1 }}</td>
+                                                        <td>
+                                                            <span class="font-semibold text-slate-900">{{ $worker->name }}</span>
+                                                            <div class="text-[11px] text-slate-500">
+                                                                {{ $worker->employee_code ?? '-' }} &middot; {{ $worker->function ?? '-' }}
+                                                            </div>
+                                                        </td>
+                                                        <td class="text-xs text-slate-600">
+                                                            {{ $formatNumber($worker->orders) }} order
+                                                            <div class="text-[11px] text-slate-500">{{ $worker->days_worked }} hari data</div>
+                                                        </td>
+                                                        <td class="font-semibold">{{ $worker->orders_per_hour !== null ? $formatNumber($worker->orders_per_hour) : '—' }}</td>
+                                                        <td>{{ $worker->capacity !== null ? $formatNumber($worker->capacity) : '—' }}</td>
+                                                        <td class="font-semibold">{{ $formatNumber($worker->allocated_orders) }}</td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                @endif
+                            </article>
+                        @endforeach
+                    </div>
+
+                    <p class="mt-2 text-xs text-slate-500">
+                        Nama diambil dari pekerja dengan output tertinggi pada data Meson di rentang historis di atas.
+                        Sumber: <span class="font-semibold">{{ $planning->recommendation_source === 'measured' ? 'produktivitas aktual' : ($planning->recommendation_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</span>.
+                    </p>
+                </div>
+            @endif
+
             @php $hasShiftBreakdown = collect($divisions)->contains(fn($d) => ! empty($d['shift1']) || ! empty($d['shift2'])); @endphp
             @if ($hasShiftBreakdown)
                 <div class="mt-6">

@@ -401,6 +401,61 @@
             </table>
         @endforeach
 
+        @if (! empty($recommendationGroups['picker']) || ! empty($recommendationGroups['packer']))
+            <div class="section-title">Rekomendasi Tenaga Kerja (Daily Worker)</div>
+
+            @if ($planning->productivity_period_start && $planning->productivity_period_end)
+                <p style="margin:-4px 0 8px;font-size:10px;color:#475569;">
+                    Basis historis produktivitas Meson:
+                    <strong>{{ $planning->productivity_period_start->format('d M Y') }} &ndash; {{ $planning->productivity_period_end->format('d M Y') }}</strong>
+                    &middot; Sumber:
+                    <strong>{{ $planning->recommendation_source === 'measured' ? 'produktivitas aktual' : ($planning->recommendation_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</strong>
+                </p>
+            @endif
+
+            <table class="doc-table">
+                <thead>
+                    <tr>
+                        <th style="width:34px;">#</th>
+                        <th style="text-align:left;">Nama DW</th>
+                        <th>Employee Code</th>
+                        <th>Role</th>
+                        <th>Histori Order</th>
+                        <th>Hari Data</th>
+                        <th>Order/Jam</th>
+                        <th>Kapasitas/Shift</th>
+                        <th>Alokasi Order</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (['picker' => 'Picker', 'packer' => 'Packer'] as $roleKey => $roleLabel)
+                        @foreach ($recommendationGroups[$roleKey] as $index => $worker)
+                            <tr>
+                                <td class="text-center">{{ $index + 1 }}</td>
+                                <td>{{ $worker->name }}</td>
+                                <td class="text-center">{{ $worker->employee_code ?? '-' }}</td>
+                                <td class="text-center">{{ $roleLabel }}</td>
+                                <td class="text-center">{{ $formatNumber($worker->orders) }}</td>
+                                <td class="text-center">{{ $worker->days_worked }}</td>
+                                <td class="text-center">{{ $worker->orders_per_hour !== null ? $formatNumber($worker->orders_per_hour) : '-' }}</td>
+                                <td class="text-center">{{ $worker->capacity !== null ? $formatNumber($worker->capacity) : '-' }}</td>
+                                <td class="text-center">{{ $formatNumber($worker->allocated_orders) }}</td>
+                            </tr>
+                        @endforeach
+                    @endforeach
+                    <tr class="total-row">
+                        <td class="text-right" colspan="8">
+                            Total rekomendasi &mdash;
+                            Picker: {{ $planning->picker_headcount ?? 0 }} orang &middot; Packer: {{ $planning->packer_headcount ?? 0 }} orang
+                        </td>
+                        <td class="text-center">
+                            {{ $formatNumber(collect($recommendationGroups['picker'])->sum('allocated_orders') + collect($recommendationGroups['packer'])->sum('allocated_orders')) }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        @endif
+
         @php $hasShiftBreakdown = collect($divisions)->contains(fn($d) => ! empty($d['shift1']) || ! empty($d['shift2'])); @endphp
         @if ($hasShiftBreakdown)
             <div class="section-title">Shift Breakdown</div>

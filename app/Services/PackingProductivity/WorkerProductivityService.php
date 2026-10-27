@@ -256,20 +256,56 @@ class WorkerProductivityService
      */
     public function leaderboard(Carbon $date, ?string $sessionType = null, ?string $role = null): array
     {
-        $dayStartWall = $date->copy()->startOfDay();
-        $dayEndWall = $date->copy()->endOfDay();
+        $range = $this->aggregateRange($date, $date, $role, $sessionType);
 
-        $dayStart = OperationalClock::fromWallClock($dayStartWall);
-        $dayEnd = OperationalClock::fromWallClock($dayEndWall);
+        $dataUntil = $this->latestSyncedAt();
+
+        return [
+            'rows' => $range['rows'],
+            'date' => $date->copy()->startOfDay(),
+            'generated_at' => OperationalClock::now(),
+            'data_until' => $dataUntil,
+            'is_stale' => $dataUntil === null || $dataUntil->toDateString() < $date->toDateString(),
+        ];
+    }
+
+    /**
+     * Aggregated performance of every worker across a date range.
+     *
+     * Used by the manpower planner to rank real people by measured output.
+     *
+     * @return array{rows: array<int, array<string, mixed>>, from: Carbon, to: Carbon}
+     */
+    public function performance(Carbon $from, Carbon $to, ?string $role = null, ?string $sessionType = null): array
+    {
+        $sessionType ??= match ($role) {
+            'picker' => 'rf',
+            'packer' => 'packing',
+            default => null,
+        };
+
+        return $this->aggregateRange($from, $to, $role, $sessionType);
+    }
+
+    /**
+     * @return array{rows: array<int, array<string, mixed>>, from: Carbon, to: Carbon}
+     */
+    private function aggregateRange(Carbon $from, Carbon $to, ?string $role, ?string $sessionType): array
+    {
+        $fromWall = $from->copy()->startOfDay();
+        $toWall = $to->copy()->endOfDay();
+
+        $rangeStart = OperationalClock::fromWallClock($fromWall);
+        $rangeEnd = OperationalClock::fromWallClock($toWall);
         $types = $this->productivity->typesForRole($role);
 
         $sessions = WorkingSession::query()
             ->with(['dailyWorker:id,name,function,position', 'wmsAccount:id,username,function'])
             ->whereNotNull('wms_account_id')
             ->when($sessionType, fn ($query) => $query->where('session_type', $sessionType))
-            ->where('started_at', '<=', $dayEnd)
-            ->where(function ($query) use ($dayStart) {
-                $query->whereNull('ended_at')->orWhere('ended_at', '>=', $dayStart);
+            ->where('started_at', '<=', $rangeEnd)
+            ->where(function ($query) use ($rangeStart) {
+                $query->whereNull('ended_at')->orWhere('ended_at', '>=', $rangeStart);
             })
             ->orderBy('started_at')
             ->get();
@@ -278,7 +314,7 @@ class WorkerProductivityService
             ? collect()
             : MesonTransaction::query()
                 ->whereIn('operator_id', $sessions->pluck('wms_account_id')->unique()->all())
-                ->whereBetween('transaction_time', [$dayStartWall, $dayEndWall])
+                ->whereBetween('transaction_time', [$fromWall, $toWall])
                 ->when($types !== null, fn ($query) => $query->whereIn('transaction_type', $types))
                 ->get()
                 ->groupBy('operator_id');
@@ -310,6 +346,7 @@ class WorkerProductivityService
             $rows[$key] ??= [
                 'key' => $key,
                 'daily_worker_id' => $session->daily_worker_id,
+                'employee_code' => $session->dailyWorker?->employee_code,
                 'name' => $session->dailyWorker?->name ?? $session->wmsAccount?->username ?? 'Unknown',
                 'username' => $session->wmsAccount?->username,
                 'function' => $session->dailyWorker?->function ?? $session->wmsAccount?->function ?? '-',
@@ -321,8 +358,8 @@ class WorkerProductivityService
                 'first_in' => null,
                 'last_out' => null,
                 'is_working' => false,
+                'days' => [],
                 'documents' => [],
-                'timestamps' => [],
             ];
 
             $row = &$rows[$key];
@@ -337,6 +374,10 @@ class WorkerProductivityService
 
             foreach ($sessionRows->pluck('document_number')->filter()->unique() as $document) {
                 $row['documents'][$document] = true;
+            }
+
+            if ($window['start'] !== null) {
+                $row['days'][$window['start']->toDateString()] = true;
             }
 
             $row['first_in'] = $row['first_in'] === null || $window['start']->lt($row['first_in'])
@@ -355,24 +396,18 @@ class WorkerProductivityService
         $result = array_map(function (array $row): array {
             $row['orders'] = count($row['documents']);
             $row['active_hours'] = round($row['active_minutes'] / 60, 2);
+            $row['days_worked'] = count($row['days']);
             $row['items_per_hour'] = $row['active_hours'] > 0 ? round($row['items'] / $row['active_hours'], 2) : null;
             $row['orders_per_hour'] = $row['active_hours'] > 0 ? round($row['orders'] / $row['active_hours'], 2) : null;
+            $row['orders_per_day'] = $row['days_worked'] > 0 ? round($row['orders'] / $row['days_worked'], 2) : null;
 
-            unset($row['documents'], $row['timestamps'], $row['active_minutes']);
+            unset($row['documents'], $row['days'], $row['active_minutes']);
 
             return $row;
         }, array_values($rows));
 
         usort($result, fn (array $a, array $b) => [$b['orders'], $b['items']] <=> [$a['orders'], $a['items']]);
 
-        $dataUntil = $this->latestSyncedAt();
-
-        return [
-            'rows' => $result,
-            'date' => $dayStartWall,
-            'generated_at' => OperationalClock::now(),
-            'data_until' => $dataUntil,
-            'is_stale' => $dataUntil === null || $dataUntil->toDateString() < $dayStartWall->toDateString(),
-        ];
+        return ['rows' => $result, 'from' => $fromWall, 'to' => $toWall];
     }
 }

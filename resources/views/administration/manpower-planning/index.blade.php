@@ -89,6 +89,154 @@
                     </article>
                 </div>
 
+                @if ($recommendations)
+                    @php
+                        $sourceBadge = function (string $source) {
+                            return match ($source) {
+                                'measured' => 'background:#dcfce7;color:#166534',
+                                'standard' => 'background:#fef3c7;color:#92400e',
+                                default => 'background:#fee2e2;color:#991b1b',
+                            };
+                        };
+                    @endphp
+
+                    <div class="mt-6">
+                        <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                            <div>
+                                <h2 class="text-lg font-semibold text-slate-900">Rekomendasi Tenaga Kerja</h2>
+                                <p class="text-sm text-slate-600">
+                                    Siapa dan berapa picker/packer yang perlu dimasukkan, dihitung dari produktivitas aktual.
+                                </p>
+                            </div>
+                            <p class="text-xs text-slate-500">
+                                Basis data Meson:
+                                <span class="font-semibold text-slate-700">
+                                    {{ $recommendations['period']['from']->format('d M Y') }} &ndash;
+                                    {{ $recommendations['period']['to']->format('d M Y') }}
+                                </span>
+                                &middot; Demand: <span class="font-semibold text-slate-700">{{ $formatNumber($outboundVolume) }} order</span>
+                                &middot; <span class="font-semibold text-slate-700">{{ $formatNumber($config['effective_hours']) }} jam/shift</span>
+                            </p>
+                        </div>
+
+                        @if (! $recommendations['has_measured_data'])
+                            <div class="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                                <span class="font-semibold">Belum ada produktivitas terukur yang memenuhi syarat.</span>
+                                Rekomendasi di bawah memakai standar master activity sebagai perkiraan. Import data Meson
+                                agar saran dihitung dari performa pekerja sebenarnya.
+                            </div>
+                        @endif
+
+                        <div class="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                            @foreach (['picker', 'packer'] as $roleKey)
+                                @php
+                                    $rec = $recommendations[$roleKey];
+                                    $isPicker = $roleKey === 'picker';
+                                    $accent = $isPicker ? 'border-blue-200' : 'border-emerald-200';
+                                    $accentText = $isPicker ? 'text-blue-700' : 'text-emerald-700';
+                                    $accentBg = $isPicker ? 'bg-blue-50' : 'bg-emerald-50';
+                                    $strip = $isPicker ? 'bg-blue-600' : 'bg-emerald-600';
+                                @endphp
+
+                                <article class="overflow-hidden rounded-xl border {{ $accent }} bg-white shadow-sm shadow-slate-300/30">
+                                    <div class="h-1 w-full {{ $strip }}"></div>
+
+                                    <div class="flex items-start justify-between gap-3 px-5 pt-4">
+                                        <div>
+                                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rekomendasi</p>
+                                            <h3 class="text-base font-bold text-slate-900">{{ $rec['label'] }}</h3>
+                                        </div>
+                                        <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                                            style="{{ $sourceBadge($rec['source']) }}">
+                                            {{ $rec['source_label'] }}
+                                        </span>
+                                    </div>
+
+                                    <div class="mt-4 grid grid-cols-3 gap-2 px-5">
+                                        <div class="rounded-lg border {{ $accent }} {{ $accentBg }} px-3 py-2">
+                                            <p class="text-[11px] text-slate-500">Jumlah orang</p>
+                                            <p class="text-2xl font-bold {{ $accentText }}">
+                                                {{ $rec['headcount'] ?? '—' }}
+                                            </p>
+                                        </div>
+                                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                            <p class="text-[11px] text-slate-500">Perkiraan selesai</p>
+                                            <p class="text-lg font-bold text-slate-900">
+                                                {{ $rec['projected_hours'] !== null ? $formatNumber($rec['projected_hours']).' jam' : '—' }}
+                                            </p>
+                                        </div>
+                                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                            <p class="text-[11px] text-slate-500">Coverage</p>
+                                            <p class="text-lg font-bold {{ ($rec['coverage'] ?? 0) >= 100 ? 'text-emerald-600' : 'text-amber-600' }}">
+                                                {{ $rec['headcount'] !== null ? $formatNumber($rec['coverage']).'%' : '—' }}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    @if (! empty($rec['selected']))
+                                        <div class="mt-4 overflow-x-auto border-t border-slate-100">
+                                            <table class="wims-table min-w-full text-left text-sm">
+                                                <thead>
+                                                    <tr>
+                                                        <th>#</th>
+                                                        <th>Nama</th>
+                                                        <th>Order/jam</th>
+                                                        <th>Kapasitas/shift</th>
+                                                        <th>Alokasi order</th>
+                                                        <th>Utilisasi</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach ($rec['selected'] as $index => $worker)
+                                                        <tr>
+                                                            <td class="font-semibold text-slate-500">{{ $index + 1 }}</td>
+                                                            <td>
+                                                                <span class="font-semibold text-slate-900">{{ $worker['name'] }}</span>
+                                                                <div class="text-[11px] text-slate-500">
+                                                                    {{ $worker['employee_code'] ?? '-' }} &middot; {{ $worker['function'] }}
+                                                                    &middot; {{ $worker['days_worked'] }} hari data
+                                                                </div>
+                                                            </td>
+                                                            <td>{{ $formatNumber($worker['orders_per_hour']) }}</td>
+                                                            <td>{{ $formatNumber($worker['capacity']) }}</td>
+                                                            <td class="font-semibold">{{ $formatNumber($worker['allocated_orders']) }}</td>
+                                                            <td>{{ $formatNumber($worker['utilization']) }}%</td>
+                                                        </tr>
+                                                    @endforeach
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    @endif
+
+                                    @if ($rec['note'])
+                                        <div class="border-t border-amber-200 bg-amber-50 px-5 py-2.5 text-xs text-amber-800">
+                                            {{ $rec['note'] }}
+                                        </div>
+                                    @endif
+
+                                    <div class="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-5 py-2 text-[11px] text-slate-500">
+                                        <span>
+                                            {{ $rec['trusted_pool'] }} kandidat terukur
+                                            @if ($rec['untracked_pool'] > 0)
+                                                &middot; {{ $rec['untracked_pool'] }} tanpa data cukup
+                                            @endif
+                                        </span>
+                                        <span>
+                                            {{ $rec['shortfall'] > 0 ? 'Kurang '.$formatNumber($rec['shortfall']).' order' : 'Demand terpenuhi' }}
+                                        </span>
+                                    </div>
+                                </article>
+                            @endforeach
+                        </div>
+
+                        <p class="mt-3 text-xs text-slate-500">
+                            Urutan kandidat memakai order/jam tertinggi dari data Meson. Satu transaksi picking
+                            (Picking&amp;Packing) dan satu transaksi packing (Packing) masing-masing dihitung satu order.
+                            Kandidat dengan data kurang dari 10 order atau 20 menit kerja tidak dipakai sebagai dasar saran.
+                        </p>
+                    </div>
+                @endif
+
                 @if (! empty($result->devices))
                     <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                         <p class="text-sm font-semibold text-slate-700">Device Readiness</p>

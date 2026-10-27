@@ -6,11 +6,13 @@ use App\Models\DeviceAvailability;
 use App\Models\ManpowerActivity;
 use App\Models\ManpowerDivisionRule;
 use App\Models\ManpowerPlanning;
+use App\Models\ManpowerPlanningRecommendation;
 use App\Models\ManpowerVasSchedule;
 use App\Models\SystemSetting;
 use App\Services\ManpowerPlanning\ManpowerPlanningEngine;
 use App\Services\ManpowerPlanning\PlanningInput;
 use App\Services\ManpowerPlanning\PlanningResult;
+use App\Services\ManpowerPlanning\ProductivityRecommender;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,6 +21,8 @@ use Illuminate\Validation\Rule;
 class ManpowerPlanningController extends Controller
 {
     private const DIVISION_ORDER = ['Inbound', 'Outbound'];
+
+    public function __construct(private ProductivityRecommender $recommender) {}
 
     public function index(Request $request)
     {
@@ -34,19 +38,55 @@ class ManpowerPlanningController extends Controller
         $vasVolume = $this->resolveVasVolume($date);
 
         $result = null;
+        $recommendations = null;
 
         if ($request->has('inbound_volume') || $request->has('outbound_volume')) {
             $result = $this->calculate($inboundVolume, $outboundVolume, $vasVolume, $config['effective_hours']);
+            $recommendations = $this->buildRecommendations($date, $outboundVolume, $config['effective_hours']);
         }
 
         return view('administration.manpower-planning.index', [
             'result' => $result,
+            'recommendations' => $recommendations,
             'inboundVolume' => $inboundVolume,
             'outboundVolume' => $outboundVolume,
             'vasVolume' => $vasVolume,
             'date' => $date,
             'config' => $config,
         ]);
+    }
+
+    /**
+     * Suggest packers and pickers from measured Meson productivity.
+     *
+     * Both roles are driven by the outbound order volume, because a picking
+     * transaction and a packing transaction each serve one order.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildRecommendations(string $date, int $outboundVolume, float $effectiveHours): array
+    {
+        $planningDate = Carbon::parse($date);
+        $picker = $this->recommender->performance($planningDate, ProductivityRecommender::ROLE_PICKER);
+        $packer = $this->recommender->performance($planningDate, ProductivityRecommender::ROLE_PACKER);
+
+        return [
+            'period' => ['from' => $picker['from'], 'to' => $picker['to']],
+            'data_until' => $picker['data_until'],
+            'has_measured_data' => $picker['has_data'] || $packer['has_data'],
+            'picker' => $this->recommender->recommend(
+                ProductivityRecommender::ROLE_PICKER,
+                $outboundVolume,
+                $effectiveHours,
+                $picker['rows'],
+            ),
+            'packer' => $this->recommender->recommend(
+                ProductivityRecommender::ROLE_PACKER,
+                $outboundVolume,
+                $effectiveHours,
+                $packer['rows'],
+            ),
+        ];
     }
 
     public function store(Request $request)
@@ -60,8 +100,13 @@ class ManpowerPlanningController extends Controller
         $vasVolume = $this->resolveVasVolume($data['planning_date']);
 
         $result = $this->calculate((int) $data['inbound_volume'], (int) $data['outbound_volume'], $vasVolume, $config['effective_hours']);
+        $recommendations = $this->buildRecommendations(
+            $data['planning_date'],
+            (int) $data['outbound_volume'],
+            $config['effective_hours'],
+        );
 
-        $planning = $this->persistPlanning($result, $data, $config, $vasVolume, null);
+        $planning = $this->persistPlanning($result, $data, $config, $vasVolume, null, $recommendations);
 
         return redirect()
             ->route('administration.manpower-planning.show', $planning)
@@ -107,11 +152,12 @@ class ManpowerPlanningController extends Controller
             return $redirect;
         }
 
-        $manpowerPlanning->load(['items' => fn ($query) => $query->orderBy('sort_order'), 'devices', 'creator', 'updater']);
+        $manpowerPlanning->load(['items' => fn ($query) => $query->orderBy('sort_order'), 'devices', 'creator', 'updater', 'recommendations']);
 
         return view('administration.manpower-planning.show', [
             'planning' => $manpowerPlanning,
             'divisions' => $this->planningSummary($manpowerPlanning),
+            'recommendationGroups' => $this->recommendationGroups($manpowerPlanning),
         ]);
     }
 
@@ -150,8 +196,13 @@ class ManpowerPlanningController extends Controller
         $vasVolume = $this->resolveVasVolume($data['planning_date']);
 
         $result = $this->calculate((int) $data['inbound_volume'], (int) $data['outbound_volume'], $vasVolume, $config['effective_hours']);
+        $recommendations = $this->buildRecommendations(
+            $data['planning_date'],
+            (int) $data['outbound_volume'],
+            $config['effective_hours'],
+        );
 
-        $planning = $this->persistPlanning($result, $data, $config, $vasVolume, $manpowerPlanning);
+        $planning = $this->persistPlanning($result, $data, $config, $vasVolume, $manpowerPlanning, $recommendations);
 
         return redirect()
             ->route('administration.manpower-planning.show', $planning)
@@ -175,6 +226,13 @@ class ManpowerPlanningController extends Controller
         $duplicate->items()->createMany(
             $manpowerPlanning->items
                 ->map(fn ($item) => $item->replicate(['manpower_planning_id', 'created_at', 'updated_at'])->toArray())
+                ->all()
+        );
+
+        $duplicate->recommendations()->createMany(
+            $manpowerPlanning->recommendations()
+                ->get()
+                ->map(fn ($recommendation) => $recommendation->replicate(['manpower_planning_id', 'created_at', 'updated_at'])->toArray())
                 ->all()
         );
 
@@ -211,13 +269,65 @@ class ManpowerPlanningController extends Controller
             return $redirect;
         }
 
-        $manpowerPlanning->load(['items' => fn ($query) => $query->orderBy('sort_order'), 'devices', 'creator', 'updater']);
+        $manpowerPlanning->load(['items' => fn ($query) => $query->orderBy('sort_order'), 'devices', 'creator', 'updater', 'recommendations']);
 
         return view('administration.manpower-planning.print', [
             'planning' => $manpowerPlanning,
             'divisions' => $this->planningSummary($manpowerPlanning),
+            'recommendationGroups' => $this->recommendationGroups($manpowerPlanning),
             'printedBy' => Auth::user()?->name ?? '-',
         ]);
+    }
+
+    /**
+     * Recommended workers grouped per role, ready for the show and print views.
+     *
+     * @return array<string, array<int, ManpowerPlanningRecommendation>>
+     */
+    private function recommendationGroups(ManpowerPlanning $planning): array
+    {
+        $grouped = $planning->recommendations->groupBy('role');
+
+        return [
+            'picker' => $grouped->get('picker', collect())->values()->all(),
+            'packer' => $grouped->get('packer', collect())->values()->all(),
+        ];
+    }
+
+    /**
+     * Flatten the recommendation payload into rows ready for insert.
+     *
+     * @param  array<string, mixed>|null  $recommendations
+     * @return array<int, array<string, mixed>>
+     */
+    private function recommendationRows(?array $recommendations): array
+    {
+        if ($recommendations === null) {
+            return [];
+        }
+
+        $rows = [];
+
+        foreach (['picker', 'packer'] as $role) {
+            foreach ($recommendations[$role]['selected'] ?? [] as $index => $worker) {
+                $rows[] = [
+                    'role' => $role,
+                    'sort_order' => $index + 1,
+                    'daily_worker_id' => $worker['daily_worker_id'],
+                    'employee_code' => $worker['employee_code'],
+                    'name' => $worker['name'],
+                    'function' => $worker['function'],
+                    'orders' => $worker['orders'],
+                    'days_worked' => $worker['days_worked'],
+                    'orders_per_hour' => $worker['orders_per_hour'],
+                    'capacity' => $worker['capacity'],
+                    'allocated_orders' => $worker['allocated_orders'],
+                    'utilization' => $worker['utilization'],
+                ];
+            }
+        }
+
+        return $rows;
     }
 
     public function deviceAvailabilities(Request $request)
@@ -474,8 +584,9 @@ class ManpowerPlanningController extends Controller
     /**
      * @param  array<string, mixed>  $data
      * @param  array{shift_duration: float, non_productive_hours: float, effective_hours: float}  $config
+     * @param  array<string, mixed>|null  $recommendations
      */
-    private function persistPlanning(PlanningResult $result, array $data, array $config, int $vasVolume, ?ManpowerPlanning $planning): ManpowerPlanning
+    private function persistPlanning(PlanningResult $result, array $data, array $config, int $vasVolume, ?ManpowerPlanning $planning, ?array $recommendations = null): ManpowerPlanning
     {
         $summary = $this->planningSummaryFromResult($result);
 
@@ -492,6 +603,14 @@ class ManpowerPlanningController extends Controller
             'overall_status' => $summary['overall_status'],
             'notes' => $data['notes'] ?? null,
         ];
+
+        if ($recommendations !== null) {
+            $attributes['productivity_period_start'] = $recommendations['period']['from']->toDateString();
+            $attributes['productivity_period_end'] = $recommendations['period']['to']->toDateString();
+            $attributes['picker_headcount'] = $recommendations['picker']['headcount'];
+            $attributes['packer_headcount'] = $recommendations['packer']['headcount'];
+            $attributes['recommendation_source'] = $recommendations['picker']['source'];
+        }
 
         if (! $planning) {
             $attributes['planning_number'] = $this->generatePlanningNumber($data['planning_date']);
@@ -512,6 +631,9 @@ class ManpowerPlanningController extends Controller
             $planning->items()->delete();
             $planning->devices()->delete();
         }
+
+        $planning->recommendations()->delete();
+        $planning->recommendations()->createMany($this->recommendationRows($recommendations));
 
         $sort = 0;
         $items = [];
