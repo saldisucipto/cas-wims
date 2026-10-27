@@ -77,7 +77,7 @@ test('recommender ranks workers by measured orders per hour', function () {
     recoSession($slow, 'CA1OPS102', 'rf', 11, 10, 'Picking&Packing');
 
     $recommender = app(ProductivityRecommender::class);
-    $performance = $recommender->performance(OperationalClock::today(), ProductivityRecommender::ROLE_PICKER);
+    $performance = $recommender->performance(OperationalClock::today()->addDay(), ProductivityRecommender::ROLE_PICKER);
 
     $names = array_column($performance['rows'], 'name');
 
@@ -95,7 +95,7 @@ test('recommendation picks only the workers needed to cover the demand', functio
     recoSession($slow, 'CA1OPS102', 'rf', 11, 10, 'Picking&Packing');
 
     $recommender = app(ProductivityRecommender::class);
-    $performance = $recommender->performance(OperationalClock::today(), ProductivityRecommender::ROLE_PICKER);
+    $performance = $recommender->performance(OperationalClock::today()->addDay(), ProductivityRecommender::ROLE_PICKER);
 
     $small = $recommender->recommend(ProductivityRecommender::ROLE_PICKER, 20, 2.0, $performance['rows']);
 
@@ -117,7 +117,7 @@ test('recommendation returns zero headcount when there is no demand', function (
     recoSession($worker, 'CA1OPS103', 'rf', 11, 5, 'Picking&Packing');
 
     $recommender = app(ProductivityRecommender::class);
-    $performance = $recommender->performance(OperationalClock::today(), ProductivityRecommender::ROLE_PICKER);
+    $performance = $recommender->performance(OperationalClock::today()->addDay(), ProductivityRecommender::ROLE_PICKER);
     $result = $recommender->recommend(ProductivityRecommender::ROLE_PICKER, 0, 7.0, $performance['rows']);
 
     expect($result['headcount'])->toBe(0)
@@ -131,7 +131,7 @@ test('packer recommendation falls back to the configured standard when Meson has
     ]);
 
     $recommender = app(ProductivityRecommender::class);
-    $performance = $recommender->performance(OperationalClock::today(), ProductivityRecommender::ROLE_PACKER);
+    $performance = $recommender->performance(OperationalClock::today()->addDay(), ProductivityRecommender::ROLE_PACKER);
 
     $result = $recommender->recommend(ProductivityRecommender::ROLE_PACKER, 100, 5.0, $performance['rows']);
 
@@ -143,7 +143,7 @@ test('packer recommendation falls back to the configured standard when Meson has
 
 test('recommendation stays unknown when neither Meson nor master standard is available', function () {
     $recommender = app(ProductivityRecommender::class);
-    $performance = $recommender->performance(OperationalClock::today(), ProductivityRecommender::ROLE_PACKER);
+    $performance = $recommender->performance(OperationalClock::today()->addDay(), ProductivityRecommender::ROLE_PACKER);
     $result = $recommender->recommend(ProductivityRecommender::ROLE_PACKER, 100, 5.0, $performance['rows']);
 
     expect($result['source'])->toBe('none')
@@ -160,7 +160,7 @@ test('manpower planning page shows the recommendations after calculating', funct
     $this->get(route('administration.manpower-planning', [
         'inbound_volume' => 0,
         'outbound_volume' => 100,
-        'date' => '2026-08-15',
+        'date' => '2026-08-16',
     ]))
         ->assertOk()
         ->assertSee('Rekomendasi Tenaga Kerja')
@@ -177,7 +177,7 @@ test('saving a planning stores the recommended workers and productivity basis', 
     $this->post(route('administration.manpower-planning.store'), [
         'inbound_volume' => 0,
         'outbound_volume' => 20,
-        'planning_date' => '2026-08-15',
+        'planning_date' => '2026-08-16',
         'status' => 'CALCULATED',
     ])->assertRedirect();
 
@@ -201,7 +201,7 @@ test('planning show and print render the recommended daily workers', function ()
     $this->post(route('administration.manpower-planning.store'), [
         'inbound_volume' => 0,
         'outbound_volume' => 20,
-        'planning_date' => '2026-08-15',
+        'planning_date' => '2026-08-16',
         'status' => 'CALCULATED',
     ])->assertRedirect();
 
@@ -210,7 +210,7 @@ test('planning show and print render the recommended daily workers', function ()
     $this->get(route('administration.manpower-planning.show', $planning))
         ->assertOk()
         ->assertSee('Rekomendasi Tenaga Kerja')
-        ->assertSee('Basis historis produktivitas')
+        ->assertSee('Basis produktivitas (data hari sebelumnya)')
         ->assertSee('BELA PICKER')
         ->assertSee('Nama DW');
 
@@ -219,5 +219,5 @@ test('planning show and print render the recommended daily workers', function ()
         ->assertSee('Rekomendasi Tenaga Kerja (Daily Worker)')
         ->assertSee('Employee Code')
         ->assertSee('BELA PICKER')
-        ->assertSee('Basis historis produktivitas Meson');
+        ->assertSee('Basis produktivitas (data hari sebelumnya)');
 });

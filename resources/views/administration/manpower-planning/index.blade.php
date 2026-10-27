@@ -109,11 +109,13 @@
                                 </p>
                             </div>
                             <p class="text-xs text-slate-500">
-                                Basis data Meson:
+                                Basis data Meson (hari sebelumnya):
                                 <span class="font-semibold text-slate-700">
-                                    {{ $recommendations['period']['from']->format('d M Y') }} &ndash;
-                                    {{ $recommendations['period']['to']->format('d M Y') }}
+                                    {{ $recommendations['period']['from']->format('d M Y') }}
                                 </span>
+                                @unless ($recommendations['period']['is_exact_previous_day'] ?? true)
+                                    <span class="text-amber-700">(tidak ada data H-1, memakai hari terakhir tersedia)</span>
+                                @endunless
                                 &middot; Demand: <span class="font-semibold text-slate-700">{{ $formatNumber($outboundVolume) }} order</span>
                                 &middot; <span class="font-semibold text-slate-700">{{ $formatNumber($config['effective_hours']) }} jam/shift</span>
                             </p>
@@ -230,9 +232,10 @@
                         </div>
 
                         <p class="mt-3 text-xs text-slate-500">
-                            Urutan kandidat memakai order/jam tertinggi dari data Meson. Satu transaksi picking
-                            (Picking&amp;Packing) dan satu transaksi packing (Packing) masing-masing dihitung satu order.
-                            Kandidat dengan data kurang dari 10 order atau 20 menit kerja tidak dipakai sebagai dasar saran.
+                            Urutan kandidat memakai order/jam tertinggi dari data Meson hari sebelumnya. Satu transaksi
+                            picking (Picking&amp;Packing) dan satu transaksi packing (Packing) masing-masing dihitung satu
+                            order. Kandidat dengan data kurang dari 10 order atau 20 menit kerja tidak dipakai sebagai
+                            dasar saran.
                         </p>
                     </div>
                 @endif

@@ -237,7 +237,7 @@ class PackingProductivityService
 
     public function scheduledHoursPerDay(): float
     {
-        return (float) (SystemSetting::query()->where('setting_key', 'pp_scheduled_hours_per_day')->value('setting_value') ?? 7);
+        return (float) (SystemSetting::query()->where('setting_key', 'pp_scheduled_hours_per_day')->value('setting_value') ?? 8);
     }
 
     public function inactivityThresholdMinutes(): int

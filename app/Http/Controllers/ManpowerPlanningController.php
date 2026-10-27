@@ -71,7 +71,12 @@ class ManpowerPlanningController extends Controller
         $packer = $this->recommender->performance($planningDate, ProductivityRecommender::ROLE_PACKER);
 
         return [
-            'period' => ['from' => $picker['from'], 'to' => $picker['to']],
+            'period' => [
+                'from' => $picker['from'],
+                'to' => $picker['to'],
+                'basis_date' => $picker['basis_date'],
+                'is_exact_previous_day' => $picker['is_exact_previous_day'],
+            ],
             'data_until' => $picker['data_until'],
             'has_measured_data' => $picker['has_data'] || $packer['has_data'],
             'picker' => $this->recommender->recommend(
@@ -825,8 +830,8 @@ class ManpowerPlanningController extends Controller
 
         return [
             'shift_duration' => (float) ($settings['shift_duration'] ?? 8),
-            'non_productive_hours' => (float) ($settings['non_productive_hours'] ?? 1),
-            'effective_hours' => (float) ($settings['effective_working_hours'] ?? 7),
+            'non_productive_hours' => (float) ($settings['non_productive_hours'] ?? 0),
+            'effective_hours' => (float) ($settings['effective_working_hours'] ?? 8),
         ];
     }
 

@@ -128,12 +128,11 @@
                 <div class="mt-6">
                     <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                         <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Rekomendasi Tenaga Kerja</h3>
-                        @if ($planning->productivity_period_start && $planning->productivity_period_end)
+                        @if ($planning->productivity_period_start)
                             <p class="text-xs text-slate-500">
-                                Basis historis produktivitas:
+                                Basis produktivitas (data hari sebelumnya):
                                 <span class="font-semibold text-slate-700">
-                                    {{ $planning->productivity_period_start->format('d M Y') }} &ndash;
-                                    {{ $planning->productivity_period_end->format('d M Y') }}
+                                    {{ $planning->productivity_period_start->format('d M Y') }}
                                 </span>
                             </p>
                         @endif
@@ -203,7 +202,8 @@
                     </div>
 
                     <p class="mt-2 text-xs text-slate-500">
-                        Nama diambil dari pekerja dengan output tertinggi pada data Meson di rentang historis di atas.
+                        Nama diambil dari pekerja dengan output tertinggi pada data Meson tanggal
+                        {{ $planning->productivity_period_start?->format('d M Y') ?? '-' }}.
                         Sumber: <span class="font-semibold">{{ $planning->recommendation_source === 'measured' ? 'produktivitas aktual' : ($planning->recommendation_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</span>.
                     </p>
                 </div>

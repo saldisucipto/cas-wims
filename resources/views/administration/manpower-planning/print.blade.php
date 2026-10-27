@@ -404,10 +404,10 @@
         @if (! empty($recommendationGroups['picker']) || ! empty($recommendationGroups['packer']))
             <div class="section-title">Rekomendasi Tenaga Kerja (Daily Worker)</div>
 
-            @if ($planning->productivity_period_start && $planning->productivity_period_end)
+            @if ($planning->productivity_period_start)
                 <p style="margin:-4px 0 8px;font-size:10px;color:#475569;">
-                    Basis historis produktivitas Meson:
-                    <strong>{{ $planning->productivity_period_start->format('d M Y') }} &ndash; {{ $planning->productivity_period_end->format('d M Y') }}</strong>
+                    Basis produktivitas (data hari sebelumnya):
+                    <strong>{{ $planning->productivity_period_start->format('d M Y') }}</strong>
                     &middot; Sumber:
                     <strong>{{ $planning->recommendation_source === 'measured' ? 'produktivitas aktual' : ($planning->recommendation_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</strong>
                 </p>

@@ -29,43 +29,52 @@ class ProductivityRecommender
 
     private const MIN_ACTIVE_MINUTES_FOR_TRUST = 20;
 
-    private const DEFAULT_LOOKBACK_DAYS = 30;
-
     public function __construct(private WorkerProductivityService $productivity) {}
 
     /**
-     * Aggregate every worker's measured output for the lookback window.
+     * Measure every worker's output for the previous day of the planning date.
+     *
+     * A single previous day is used on purpose: the recommendation must reflect
+     * the most recent shift, not a monthly average. When that exact day has no
+     * Meson data, the closest earlier day that does is used instead and reported
+     * back so the planner sees which date was taken as the basis.
      *
      * @return array{
      *     rows: array<int, array<string, mixed>>,
      *     from: Carbon,
      *     to: Carbon,
+     *     basis_date: Carbon,
+     *     is_exact_previous_day: bool,
      *     data_until: Carbon|null,
      *     has_data: bool
      * }
      */
-    public function performance(Carbon $planningDate, string $role, ?int $lookbackDays = null): array
+    public function performance(Carbon $planningDate, string $role): array
     {
-        $lookbackDays ??= (int) (SystemSetting::query()
-            ->where('setting_key', 'pp_lookback_days')
-            ->value('setting_value') ?? self::DEFAULT_LOOKBACK_DAYS);
+        $planningStart = $planningDate->copy()->startOfDay();
+        $previousDay = $planningStart->copy()->subDay();
 
-        $latestData = $this->latestTransactionDate();
-        $to = $latestData !== null && $latestData->lt($planningDate->copy()->startOfDay())
-            ? $latestData
-            : $planningDate->copy();
+        $latestBefore = MesonTransaction::query()
+            ->where('transaction_time', '<', $planningStart)
+            ->max('transaction_time');
 
-        $from = $to->copy()->subDays(max(1, $lookbackDays) - 1);
+        $latestDate = $latestBefore ? Carbon::parse($latestBefore)->startOfDay() : null;
 
-        $result = $this->productivity->performance($from, $to, $role);
+        $basisDate = $latestDate !== null && $latestDate->lt($previousDay)
+            ? $latestDate
+            : $previousDay;
+
+        $result = $this->productivity->performance($basisDate, $basisDate, $role);
 
         $rows = array_map(fn (array $row) => $this->decorate($row), $result['rows']);
 
         return [
             'rows' => $rows,
-            'from' => $result['from'],
-            'to' => $result['to'],
-            'data_until' => $latestData,
+            'from' => $basisDate->copy()->startOfDay(),
+            'to' => $basisDate->copy()->endOfDay(),
+            'basis_date' => $basisDate->copy()->startOfDay(),
+            'is_exact_previous_day' => $basisDate->equalTo($previousDay),
+            'data_until' => $latestDate,
             'has_data' => collect($rows)->contains(fn (array $row) => (bool) $row['trusted']),
         ];
     }
@@ -266,12 +275,5 @@ class ProductivityRecommender
             && ($row['orders_per_hour'] ?? 0) > 0;
 
         return $row;
-    }
-
-    private function latestTransactionDate(): ?Carbon
-    {
-        $latest = MesonTransaction::query()->max('transaction_time');
-
-        return $latest ? Carbon::parse($latest) : null;
     }
 }

@@ -215,8 +215,8 @@ test('missing required columns stops the import', function () {
 test('scheduled hours excludes sunday and uses configurable hours per day', function () {
     $service = app(PackingProductivityService::class);
 
-    // Monday 2026-08-17 to Saturday 2026-08-22 => 6 working days * 7h = 42h.
-    expect($service->scheduledHours(Carbon::parse('2026-08-17'), Carbon::parse('2026-08-22')))->toBe(42.0);
+    // Monday 2026-08-17 to Saturday 2026-08-22 => 6 working days * 8h = 48h.
+    expect($service->scheduledHours(Carbon::parse('2026-08-17'), Carbon::parse('2026-08-22')))->toBe(48.0);
 });
 
 test('import resolves the daily worker from the working session', function () {
