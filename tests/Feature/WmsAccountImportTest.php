@@ -89,10 +89,10 @@ function buildWmsAccountImportWorkbook(array $rows): string
 {
     $headers = ['username', 'password', 'function', 'status'];
 
-    return buildSpreadsheetWorkbook('WMS Accounts', $headers, $rows);
+    return buildWmsAccountSpreadsheetWorkbook('WMS Accounts', $headers, $rows);
 }
 
-function buildSpreadsheetWorkbook(string $sheetName, array $headers, array $rows): string
+function buildWmsAccountSpreadsheetWorkbook(string $sheetName, array $headers, array $rows): string
 {
     $allRows = [$headers, ...$rows];
     $sharedStrings = [];
@@ -108,7 +108,7 @@ function buildSpreadsheetWorkbook(string $sheetName, array $headers, array $rows
                 $sharedStrings[] = $value;
             }
 
-            $column = indexToSpreadsheetColumnReference($columnIndex);
+            $column = wmsAccountColumnReference($columnIndex);
             $cells[] = '<c r="'.$column.($rowIndex + 1).'" t="s"><v>'.$sharedStringLookup[$value].'</v></c>';
         }
 
@@ -119,7 +119,7 @@ function buildSpreadsheetWorkbook(string $sheetName, array $headers, array $rows
         ->map(fn (string $value): string => '<si><t>'.e($value).'</t></si>')
         ->implode('');
 
-    $lastColumn = indexToSpreadsheetColumnReference(count($headers) - 1);
+    $lastColumn = wmsAccountColumnReference(count($headers) - 1);
     $lastRow = count($allRows);
     $sheetData = implode('', $worksheetRows);
     $count = count($sharedStrings);
@@ -190,7 +190,7 @@ XML);
     return $contents === false ? '' : $contents;
 }
 
-function indexToSpreadsheetColumnReference(int $index): string
+function wmsAccountColumnReference(int $index): string
 {
     $reference = '';
     $number = $index + 1;

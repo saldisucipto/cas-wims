@@ -6,6 +6,7 @@ use App\Models\MesonImportBatch;
 use App\Models\MesonTransaction;
 use App\Models\SystemSetting;
 use App\Models\WmsAccount;
+use App\Models\WorkingCalendar;
 use App\Models\WorkingSession;
 use App\Services\Import\SpreadsheetReader;
 use Carbon\Carbon;
@@ -19,6 +20,22 @@ class PackingProductivityService
      * Columns that must be present in the Meson export before an import can proceed.
      */
     public const REQUIRED_COLUMNS = ['Transaction ID', 'Transaction Time', 'Operator', 'Document number'];
+
+    /**
+     * Every Meson type the importer is allowed to store.
+     */
+    public const DEFAULT_TRANSACTION_TYPES = ['Packing', 'Picking&Packing'];
+
+    /**
+     * Picking work is recorded by Meson as Picking&Packing.
+     */
+    public const DEFAULT_PICKER_TRANSACTION_TYPES = ['Picking&Packing'];
+
+    /**
+     * Packing work is recorded by Meson as Packing. The two types are distinct
+     * and must never be blended into one productivity figure.
+     */
+    public const DEFAULT_PACKER_TRANSACTION_TYPES = ['Packing'];
 
     /**
      * Meson header name => meson_transactions column.
@@ -102,6 +119,21 @@ class PackingProductivityService
     {
         $analysis = $this->analyze($path, $extension, $start, $end);
 
+        // Never delete a period only to insert nothing: a mismatched transaction
+        // type filter would otherwise silently wipe the imported history.
+        if ($analysis['rows'] === []) {
+            throw ValidationException::withMessages([
+                'file' => [sprintf(
+                    'Tidak ada baris yang lolos filter. Total %d baris: %d di luar periode, %d jenis transaksi tidak cocok (%s), %d waktu tidak valid. Data periode tidak diubah.',
+                    $analysis['total_rows'],
+                    $analysis['outside_period'],
+                    $analysis['excluded_by_type'],
+                    implode(', ', $this->transactionTypes()),
+                    $analysis['invalid_time'],
+                )],
+            ]);
+        }
+
         return DB::transaction(function () use ($analysis, $start, $end, $fileName, $importedBy) {
             MesonTransaction::query()
                 ->whereBetween('transaction_time', [$start->copy()->startOfDay(), $end->copy()->endOfDay()])
@@ -131,14 +163,73 @@ class PackingProductivityService
     // ------------------------------------------------------------------
 
     /**
+     * Transaction types accepted by the importer.
+     *
+     * The import allow-list is the union of every role mapping, so narrowing a
+     * role never makes the importer discard rows it used to accept.
+     *
      * @return array<int, string>
      */
     public function transactionTypes(): array
     {
-        $value = SystemSetting::query()->where('setting_key', 'pp_transaction_types')->value('setting_value');
+        $types = array_merge(
+            $this->csvSetting('pp_transaction_types'),
+            $this->pickerTransactionTypes(),
+            $this->packerTransactionTypes(),
+            self::DEFAULT_TRANSACTION_TYPES,
+        );
 
-        return collect(explode(',', (string) ($value ?? 'Packing')))
-            ->map(fn ($type) => trim($type))
+        return array_values(array_unique(array_filter($types)));
+    }
+
+    /**
+     * Meson transaction types that represent picking work (RF handheld).
+     *
+     * @return array<int, string>
+     */
+    public function pickerTransactionTypes(): array
+    {
+        $types = $this->csvSetting('pp_picker_transaction_types');
+
+        return $types !== [] ? $types : self::DEFAULT_PICKER_TRANSACTION_TYPES;
+    }
+
+    /**
+     * Meson transaction types that represent packing work (packing station).
+     *
+     * @return array<int, string>
+     */
+    public function packerTransactionTypes(): array
+    {
+        $types = $this->csvSetting('pp_packer_transaction_types');
+
+        return $types !== [] ? $types : self::DEFAULT_PACKER_TRANSACTION_TYPES;
+    }
+
+    /**
+     * Resolve the transaction types for a productivity role, or null when the
+     * role is unknown and no filtering should apply.
+     *
+     * @return array<int, string>|null
+     */
+    public function typesForRole(?string $role): ?array
+    {
+        return match ($role) {
+            'picker' => $this->pickerTransactionTypes(),
+            'packer' => $this->packerTransactionTypes(),
+            default => null,
+        };
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function csvSetting(string $key): array
+    {
+        $value = SystemSetting::query()->where('setting_key', $key)->value('setting_value');
+
+        return collect(explode(',', (string) $value))
+            ->map(fn ($type) => trim((string) $type))
             ->filter()
             ->values()
             ->all();
@@ -171,28 +262,52 @@ class PackingProductivityService
 
         return [
             'summary' => $this->summarize($rows, $scheduledHours),
-            'per_worker' => $this->aggregateByWorker($rows, $scheduledHours),
+            'per_worker' => $this->aggregateByWorker($rows),
             'hourly' => $this->aggregateByHour($rows),
             'daily' => $this->aggregateByDay($rows),
+            'role' => $filters['role'] ?? null,
+            'transaction_types' => $this->typesForRole($filters['role'] ?? null),
         ];
     }
 
+    /**
+     * Scheduled hours for the period, driven by the warehouse working calendar.
+     *
+     * Falls back to "every day except Sunday" only when the calendar has not been
+     * seeded, so Saturday short shifts and non-working days are respected.
+     */
     public function scheduledHours(Carbon $start, Carbon $end): float
     {
-        $workingDays = 0;
+        $calendar = WorkingCalendar::query()->get()->keyBy('day_of_week');
+        $fallbackHoursPerDay = $this->scheduledHoursPerDay();
+        $hours = 0.0;
 
         for ($date = $start->copy()->startOfDay(); $date->lte($end->copy()->startOfDay()); $date->addDay()) {
+            $day = $calendar->get($date->dayOfWeekIso);
+
+            if ($day !== null) {
+                if ($day->is_working_day) {
+                    $hours += (float) $day->working_hours;
+                }
+
+                continue;
+            }
+
             if ($date->dayOfWeekIso !== 7) {
-                $workingDays++;
+                $hours += $fallbackHoursPerDay;
             }
         }
 
-        return $workingDays * $this->scheduledHoursPerDay();
+        return round($hours, 2);
     }
 
     /**
-     * Estimated active minutes from a sorted list of transaction timestamps,
-     * subtracting gaps that exceed the configured inactivity threshold.
+     * Estimated active minutes from a list of transaction timestamps.
+     *
+     * The span alone overstates activity across idle gaps, while subtracting whole
+     * gaps collapses sparse workers to zero. Each interval is therefore capped at
+     * the inactivity threshold: a gap never contributes more than one threshold
+     * worth of work, and never negative.
      *
      * @param  Collection<int, Carbon>  $timestamps
      */
@@ -204,20 +319,20 @@ class PackingProductivityService
             return 0;
         }
 
-        $total = max(0, $timestamps->first()->diffInMinutes($timestamps->last()));
+        $total = 0.0;
         $previous = $timestamps->first();
 
         foreach ($timestamps->slice(1) as $timestamp) {
-            $gap = $previous->diffInMinutes($timestamp);
+            $gap = abs((float) $previous->diffInMinutes($timestamp, false));
 
-            if ($gap > $thresholdMinutes) {
-                $total -= $gap;
+            if ($gap > 0) {
+                $total += min($gap, (float) $thresholdMinutes);
             }
 
             $previous = $timestamp;
         }
 
-        return max(0, $total);
+        return (int) round($total);
     }
 
     // ------------------------------------------------------------------
@@ -281,9 +396,11 @@ class PackingProductivityService
 
         // Preload working sessions for the valid operators, so the person (daily worker)
         // can be resolved per transaction from the actual session, not a static account link.
+        // Session timestamps are real instants while the period bounds are wall-clock
+        // values, so the query window is widened to absorb any timezone offset.
         $sessionsByOperator = WorkingSession::query()
             ->whereIn('wms_account_id', $operatorMap->values()->filter()->all())
-            ->whereBetween('started_at', [$startTs->copy()->subDay(), $endTs->copy()->addDay()])
+            ->whereBetween('started_at', [$startTs->copy()->subDays(2), $endTs->copy()->addDays(2)])
             ->get(['id', 'daily_worker_id', 'wms_account_id', 'started_at', 'ended_at'])
             ->groupBy('wms_account_id');
 
@@ -430,6 +547,9 @@ class PackingProductivityService
      * Resolve the daily worker (person) who performed a transaction from the working
      * session that bound the operator account to a person on that date/shift.
      *
+     * `$time` is a naive Meson wall-clock value; session timestamps are real
+     * instants, so they are converted before any comparison.
+     *
      * @param  Collection<int, WorkingSession>  $sessions
      */
     private function resolveDailyWorker(?int $operatorId, Carbon $time, Collection $sessions, ?int $fallbackWorkerId): ?int
@@ -439,8 +559,8 @@ class PackingProductivityService
         }
 
         foreach ($sessions as $session) {
-            $start = $session->started_at;
-            $end = $session->ended_at ?? $time->copy()->endOfDay();
+            $start = OperationalClock::toWallClock($session->started_at);
+            $end = OperationalClock::toWallClock($session->ended_at) ?? $time->copy()->endOfDay();
 
             if ($start && $time->between($start, $end)) {
                 return $session->daily_worker_id;
@@ -448,7 +568,9 @@ class PackingProductivityService
         }
 
         foreach ($sessions as $session) {
-            if ($session->started_at?->toDateString() === $time->toDateString()) {
+            $start = OperationalClock::toWallClock($session->started_at);
+
+            if ($start && $start->toDateString() === $time->toDateString()) {
                 return $session->daily_worker_id;
             }
         }
@@ -530,6 +652,12 @@ class PackingProductivityService
             $query->where('transaction_type', $filters['transaction_type']);
         }
 
+        $roleTypes = $this->typesForRole($filters['role'] ?? null);
+
+        if ($roleTypes !== null) {
+            $query->whereIn('transaction_type', $roleTypes);
+        }
+
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
         }
@@ -543,43 +671,78 @@ class PackingProductivityService
      */
     private function summarize(Collection $rows, float $scheduledHours): array
     {
+        $threshold = $this->inactivityThresholdMinutes();
+
         $orders = $rows->pluck('document_number')->filter()->unique()->count();
         $lines = $rows->count();
-        $items = $rows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0);
+        $items = (float) $rows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0);
         $operators = $rows->pluck('operator_id')->filter()->unique()->count();
         $workers = $rows->pluck('daily_worker_id')->filter()->unique()->count();
+
+        // Labour hours are the sum of each person's capped-gap active time, so the
+        // period throughput is divided by time actually spent working, not by the
+        // calendar span of the whole period.
+        $laborHours = 0.0;
+
+        foreach ($this->groupRowsByWorker($rows) as $workerRows) {
+            $laborHours += $this->estimatedActiveMinutes($workerRows->pluck('transaction_time'), $threshold) / 60;
+        }
+
+        $laborHours = round($laborHours, 2);
+        $rateBasis = $laborHours > 0 ? $laborHours : $scheduledHours;
+        $workerCount = count($this->groupRowsByWorker($rows));
+        $capacityHours = $scheduledHours * max(1, $workerCount);
 
         return [
             'total_orders' => $orders,
             'total_lines' => $lines,
-            'total_items' => (float) $items,
+            'total_items' => $items,
             'total_operators' => $operators,
-            'total_workers' => $workers ?: $operators,
+            'total_workers' => $workerCount,
             'scheduled_hours' => $scheduledHours,
-            'orders_per_hour' => $this->rate($orders, $scheduledHours),
-            'lines_per_hour' => $this->rate($lines, $scheduledHours),
-            'items_per_hour' => $this->rate((float) $items, $scheduledHours),
+            'labor_hours' => $laborHours,
+            'utilization' => $capacityHours > 0 ? round($laborHours / $capacityHours * 100, 1) : 0.0,
+            'orders_per_hour' => $this->rate($orders, $rateBasis),
+            'lines_per_hour' => $this->rate($lines, $rateBasis),
+            'items_per_hour' => $this->rate($items, $rateBasis),
         ];
+    }
+
+    /**
+     * Group transactions by the person who performed them.
+     *
+     * @param  Collection<int, MesonTransaction>  $rows
+     * @return Collection<string, Collection<int, MesonTransaction>>
+     */
+    private function groupRowsByWorker(Collection $rows): Collection
+    {
+        return $rows->groupBy(fn (MesonTransaction $row) => $row->daily_worker_id !== null
+            ? 'worker:'.$row->daily_worker_id
+            : 'operator:'.($row->operator_id ?? 'unknown'));
     }
 
     /**
      * @param  Collection<int, MesonTransaction>  $rows
      * @return array<int, array<string, mixed>>
      */
-    private function aggregateByWorker(Collection $rows, float $scheduledHours): array
+    private function aggregateByWorker(Collection $rows): array
     {
         $threshold = $this->inactivityThresholdMinutes();
         $result = [];
 
-        foreach ($rows->groupBy(fn (MesonTransaction $row) => $row->daily_worker_id ?? 'op:'.$row->operator_id) as $workerRows) {
+        foreach ($this->groupRowsByWorker($rows) as $workerRows) {
             $first = $workerRows->first();
             $dailyWorker = $first->dailyWorker;
             $operator = $first->operator;
 
             $orders = $workerRows->pluck('document_number')->filter()->unique()->count();
             $lines = $workerRows->count();
-            $items = $workerRows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0);
+            $items = (float) $workerRows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0);
             $activeMinutes = $this->estimatedActiveMinutes($workerRows->pluck('transaction_time'), $threshold);
+            $activeHours = round($activeMinutes / 60, 2);
+
+            // A worker's rate must use their own time, never the period calendar.
+            $hasRate = $activeHours > 0;
 
             $result[] = [
                 'daily_worker_id' => $first->daily_worker_id,
@@ -589,11 +752,11 @@ class PackingProductivityService
                 'function' => $operator?->function ?? '-',
                 'orders' => $orders,
                 'lines' => $lines,
-                'items' => (float) $items,
-                'orders_per_hour' => $this->rate($orders, $scheduledHours),
-                'lines_per_hour' => $this->rate($lines, $scheduledHours),
-                'items_per_hour' => $this->rate((float) $items, $scheduledHours),
-                'estimated_active_hours' => round($activeMinutes / 60, 2),
+                'items' => $items,
+                'orders_per_hour' => $hasRate ? $this->rate($orders, $activeHours) : null,
+                'lines_per_hour' => $hasRate ? $this->rate($lines, $activeHours) : null,
+                'items_per_hour' => $hasRate ? $this->rate($items, $activeHours) : null,
+                'estimated_active_hours' => $activeHours,
             ];
         }
 
@@ -603,6 +766,11 @@ class PackingProductivityService
     }
 
     /**
+     * Hourly buckets keyed by date + hour.
+     *
+     * Merging every day into one 24-hour bucket turns a three-day import into a
+     * single inflated bar, so the date is kept as part of the key.
+     *
      * @param  Collection<int, MesonTransaction>  $rows
      * @return array<int, array<string, mixed>>
      */
@@ -610,20 +778,24 @@ class PackingProductivityService
     {
         $result = [];
 
-        foreach ($rows->groupBy(fn (MesonTransaction $row) => $row->transaction_time?->format('H:00')) as $hour => $hourRows) {
-            if ($hour === null) {
+        foreach ($rows->groupBy(fn (MesonTransaction $row) => $row->transaction_time?->format('Y-m-d H:00')) as $bucket => $hourRows) {
+            if ($bucket === null) {
                 continue;
             }
 
+            [$date, $hour] = explode(' ', $bucket, 2);
+
             $result[] = [
+                'date' => $date,
                 'hour' => $hour,
+                'bucket' => $bucket,
                 'orders' => $hourRows->pluck('document_number')->filter()->unique()->count(),
                 'lines' => $hourRows->count(),
                 'items' => (float) $hourRows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0),
             ];
         }
 
-        usort($result, fn ($a, $b) => strcmp($a['hour'], $b['hour']));
+        usort($result, fn ($a, $b) => strcmp($a['bucket'], $b['bucket']));
 
         return $result;
     }

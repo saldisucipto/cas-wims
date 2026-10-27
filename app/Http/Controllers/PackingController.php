@@ -9,12 +9,15 @@ use App\Models\PackingStation;
 use App\Models\RfDevice;
 use App\Models\WmsAccount;
 use App\Models\WorkingSession;
+use App\Services\PackingProductivity\WorkerProductivityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class PackingController extends Controller
 {
+    public function __construct(private WorkerProductivityService $workerProductivity) {}
+
     public function registration()
     {
         return view('packing.registration', [
@@ -67,10 +70,13 @@ class PackingController extends Controller
 
         return view('packing.dashboard', [
             'employeeName' => $worker->name,
+            'employeeFunction' => $worker->function,
+            'employeePosition' => $worker->position,
             'packingStationName' => $session->packingStation?->name ?? '-',
             'wmsUsername' => $session->wmsAccount?->username ?? '-',
             'wmsPassword' => $session->wmsAccount?->password ?? '-',
             'sessionStartedAt' => $session->started_at?->toIso8601String(),
+            'productivity' => $this->workerProductivity->forSession($session, 'packer'),
             'latestRequestStatus' => $latestRequest?->status ?? 'No Request',
             'latestRequestItems' => $latestRequest?->items ?? collect(),
         ]);

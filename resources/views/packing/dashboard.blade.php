@@ -12,11 +12,11 @@
             <div class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                 <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                     <p class="text-slate-500">Function</p>
-                    <p class="font-semibold text-slate-900">Outbound</p>
+                    <p class="font-semibold text-slate-900">{{ $employeeFunction ?? '-' }}</p>
                 </div>
                 <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                     <p class="text-slate-500">Position</p>
-                    <p class="font-semibold text-slate-900">Packer</p>
+                    <p class="font-semibold text-slate-900">{{ $employeePosition ?? '-' }}</p>
                 </div>
                 <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3">
                     <p class="text-slate-500">Status</p>
@@ -88,6 +88,8 @@
                 </dl>
             </article>
         </section>
+
+        <x-worker-productivity-card :productivity="$productivity" class="mt-6" />
 
         <section class="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-300/40">
             <h2 class="text-lg font-semibold text-slate-900">Latest Consumable Request</h2>

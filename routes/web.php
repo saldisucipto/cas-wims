@@ -6,6 +6,7 @@ use App\Http\Controllers\AtkController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\LeaderAuthController;
+use App\Http\Controllers\LeaderboardController;
 use App\Http\Controllers\LeaderPanelController;
 use App\Http\Controllers\ManpowerPlanningController;
 use App\Http\Controllers\MasterDataController;
@@ -30,6 +31,8 @@ Route::get('/consumable-request-status', [PackingController::class, 'consumableR
 
 Route::get('/rf-handheld-registration', [RfController::class, 'registration'])->name('rf.registration');
 Route::get('/rf-handheld-dashboard', [RfController::class, 'dashboard'])->name('rf.dashboard');
+
+Route::get('/leaderboard-productivity', [LeaderboardController::class, 'index'])->name('leaderboard.productivity');
 
 Route::get('/administration-login', [AdministrationAuthController::class, 'create'])->name('administration.login');
 Route::post('/administration-login', [AdministrationAuthController::class, 'store'])->name('administration.login.submit');

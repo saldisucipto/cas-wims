@@ -6,12 +6,15 @@ use App\Models\DailyWorker;
 use App\Models\RfDevice;
 use App\Models\WmsAccount;
 use App\Models\WorkingSession;
+use App\Services\PackingProductivity\WorkerProductivityService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class RfController extends Controller
 {
+    public function __construct(private WorkerProductivityService $workerProductivity) {}
+
     public function registration()
     {
         return view('rf.registration', [
@@ -62,10 +65,13 @@ class RfController extends Controller
 
         return view('rf.dashboard', [
             'employeeName' => $worker->name,
+            'employeeFunction' => $worker->function,
+            'employeePosition' => $worker->position,
             'deviceName' => $device->code,
             'wmsUsername' => $session->wmsAccount?->username ?? '-',
             'wmsPassword' => $session->wmsAccount?->password ?? '-',
             'sessionStartedAt' => $session->started_at?->toIso8601String(),
+            'productivity' => $this->workerProductivity->forSession($session, 'picker'),
         ]);
     }
 

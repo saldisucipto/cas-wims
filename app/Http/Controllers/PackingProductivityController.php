@@ -25,7 +25,7 @@ class PackingProductivityController extends Controller
             return $redirect;
         }
 
-        $filters = $request->only(['start_date', 'end_date', 'warehouse_id', 'operator_id', 'daily_worker_id', 'function', 'transaction_type', 'status']);
+        $filters = $request->only(['start_date', 'end_date', 'warehouse_id', 'operator_id', 'daily_worker_id', 'function', 'transaction_type', 'status', 'role']);
 
         return view('administration.packing-productivity.index', [
             'data' => $this->service->dashboard($filters),

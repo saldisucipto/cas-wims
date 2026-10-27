@@ -11,11 +11,11 @@
             <div class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                 <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                     <p class="text-slate-500">Function</p>
-                    <p class="font-semibold text-slate-900">Outbound</p>
+                    <p class="font-semibold text-slate-900">{{ $employeeFunction ?? '-' }}</p>
                 </div>
                 <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                     <p class="text-slate-500">Position</p>
-                    <p class="font-semibold text-slate-900">Picker</p>
+                    <p class="font-semibold text-slate-900">{{ $employeePosition ?? '-' }}</p>
                 </div>
                 <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                     <p class="text-slate-500">RF Device</p>
@@ -53,10 +53,6 @@
                         <dd class="mt-1 text-base font-semibold text-slate-900">Morning Shift</dd>
                     </div>
                     <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                        <dt class="text-sm text-slate-500">Task Queue</dt>
-                        <dd class="mt-1 text-base font-semibold text-slate-900">12 Picking Tasks</dd>
-                    </div>
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                         <dt class="text-sm text-slate-500">Current Date</dt>
                         <dd id="currentDate" class="mt-1 text-base font-semibold text-slate-900"></dd>
                     </div>
@@ -71,6 +67,8 @@
                 </dl>
             </article>
         </section>
+
+        <x-worker-productivity-card :productivity="$productivity" class="mt-6" />
 
         <div class="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <a href="{{ route('rf.registration') }}"

@@ -31,6 +31,24 @@
                 </div>
             @endif
 
+            @php
+                $roleTypes = $data['transaction_types'] ?? null;
+                $roleLabel = match ($data['role'] ?? null) {
+                    'picker' => 'Picker',
+                    'packer' => 'Packer',
+                    default => 'Semua role',
+                };
+            @endphp
+
+            <div class="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                <span class="font-semibold">Role:</span> {{ $roleLabel }}
+                &middot; <span class="font-semibold">Transaction type:</span>
+                {{ is_array($roleTypes) && $roleTypes !== [] ? implode(', ', $roleTypes) : 'Packing, Picking&Packing (semua)' }}
+                <span class="block text-xs text-blue-700">
+                    Picker dihitung dari <code>Picking&Packing</code>, Packer dari <code>Packing</code>. Keduanya tidak pernah digabung.
+                </span>
+            </div>
+
             <div class="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
                 <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p class="text-sm text-slate-500">Total Orders</p>
@@ -51,10 +69,12 @@
                 <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p class="text-sm text-slate-500">Avg Orders / Hour</p>
                     <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['orders_per_hour'], 1) }}</p>
+                    <p class="text-xs text-slate-500">per labour hour</p>
                 </article>
                 <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p class="text-sm text-slate-500">Avg Items / Hour</p>
                     <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['items_per_hour'], 1) }}</p>
+                    <p class="text-xs text-slate-500">{{ number_format($data['summary']['labor_hours'], 2) }} labour hours</p>
                 </article>
             </div>
 
@@ -96,6 +116,11 @@
                     @foreach ($statuses as $status)
                         <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ $status }}</option>
                     @endforeach
+                </select>
+                <select name="role" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="">Semua role</option>
+                    <option value="picker" @selected(($filters['role'] ?? '') === 'picker')>Picker (Picking&Packing)</option>
+                    <option value="packer" @selected(($filters['role'] ?? '') === 'packer')>Packer</option>
                 </select>
                 <button class="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white">Apply Filters</button>
             </form>
@@ -141,9 +166,9 @@
                                     <td>{{ number_format($row['orders']) }}</td>
                                     <td>{{ number_format($row['lines']) }}</td>
                                     <td>{{ number_format($row['items']) }}</td>
-                                    <td>{{ number_format($row['orders_per_hour'], 1) }}</td>
-                                    <td>{{ number_format($row['items_per_hour'], 1) }}</td>
-                                    <td>{{ number_format($row['estimated_active_hours'], 1) }}</td>
+                                    <td>{{ $row['orders_per_hour'] !== null ? number_format($row['orders_per_hour'], 1) : '—' }}</td>
+                                    <td>{{ $row['items_per_hour'] !== null ? number_format($row['items_per_hour'], 1) : '—' }}</td>
+                                    <td>{{ number_format($row['estimated_active_hours'], 2) }}</td>
                                 </tr>
                             @empty
                                 <tr><td colspan="8"><div class="wims-empty-state">Belum ada data produktivitas. Silakan import data Meson.</div></td></tr>
@@ -162,10 +187,11 @@
                     <div class="grid min-h-45 items-end gap-2 overflow-x-auto pb-2"
                         style="grid-template-columns: repeat({{ $hourlyCount }}, minmax(52px, 1fr));">
                         @forelse ($data['hourly'] as $row)
-                            <div class="flex flex-col items-center" title="{{ $row['hour'] }} - {{ $row['items'] }} items">
+                            <div class="flex flex-col items-center" title="{{ $row['date'] }} {{ $row['hour'] }} - {{ $row['items'] }} items">
                                 <div class="text-[10px] font-semibold text-slate-700">{{ $row['items'] }}</div>
                                 <div class="w-full rounded-t bg-blue-500" style="height: {{ max(4, round($row['items'] / $maxHourItems * 120)) }}px"></div>
                                 <div class="mt-1 text-[10px] text-slate-500">{{ $row['hour'] }}</div>
+                                <div class="text-[9px] text-slate-400">{{ \Illuminate\Support\Carbon::parse($row['date'])->format('d/m') }}</div>
                             </div>
                         @empty
                             <p class="text-sm text-slate-500">Belum ada data hourly.</p>
@@ -175,17 +201,39 @@
 
                 <div class="mt-3 overflow-x-auto">
                     <table class="wims-table min-w-full text-left text-sm">
-                        <thead><tr><th>Hour</th><th>Orders</th><th>SKU Lines</th><th>Items</th></tr></thead>
+                        <thead><tr><th>Date</th><th>Hour</th><th>Orders</th><th>SKU Lines</th><th>Items</th></tr></thead>
                         <tbody>
                             @forelse ($data['hourly'] as $row)
                                 <tr>
+                                    <td>{{ $row['date'] }}</td>
                                     <td class="font-semibold">{{ $row['hour'] }}</td>
                                     <td>{{ number_format($row['orders']) }}</td>
                                     <td>{{ number_format($row['lines']) }}</td>
                                     <td>{{ number_format($row['items']) }}</td>
                                 </tr>
                             @empty
-                                <tr><td colspan="4"><div class="wims-empty-state">Belum ada data hourly.</div></td></tr>
+                                <tr><td colspan="5"><div class="wims-empty-state">Belum ada data hourly.</div></td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mt-6">
+                <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Daily Productivity</h3>
+                <div class="mt-2 overflow-x-auto">
+                    <table class="wims-table min-w-full text-left text-sm">
+                        <thead><tr><th>Date</th><th>Orders</th><th>SKU Lines</th><th>Items</th></tr></thead>
+                        <tbody>
+                            @forelse ($data['daily'] as $row)
+                                <tr>
+                                    <td class="font-semibold">{{ $row['date'] }}</td>
+                                    <td>{{ number_format($row['orders']) }}</td>
+                                    <td>{{ number_format($row['lines']) }}</td>
+                                    <td>{{ number_format($row['items']) }}</td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="4"><div class="wims-empty-state">Belum ada data harian.</div></td></tr>
                             @endforelse
                         </tbody>
                     </table>

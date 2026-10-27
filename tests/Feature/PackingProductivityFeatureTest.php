@@ -5,8 +5,10 @@ use App\Models\MesonImportBatch;
 use App\Models\MesonTransaction;
 use App\Models\User;
 use App\Models\WmsAccount;
+use App\Models\WorkingCalendar;
 use App\Models\WorkingSession;
 use App\Services\PackingProductivity\PackingProductivityService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 
@@ -214,7 +216,7 @@ test('scheduled hours excludes sunday and uses configurable hours per day', func
     $service = app(PackingProductivityService::class);
 
     // Monday 2026-08-17 to Saturday 2026-08-22 => 6 working days * 7h = 42h.
-    expect($service->scheduledHours(\Carbon\Carbon::parse('2026-08-17'), \Carbon\Carbon::parse('2026-08-22')))->toBe(42.0);
+    expect($service->scheduledHours(Carbon::parse('2026-08-17'), Carbon::parse('2026-08-22')))->toBe(42.0);
 });
 
 test('import resolves the daily worker from the working session', function () {
@@ -258,6 +260,119 @@ test('import resolves the daily worker from the working session', function () {
     $this->get(route('administration.packing-productivity'))
         ->assertOk()
         ->assertSee('Andi Pratama');
+});
+
+test('import refuses to wipe a period when no row matches the transaction type filter', function () {
+    $this->actingAs(User::factory()->create(['role' => 'Administrator']));
+    seedPackingOperator('CA1OPS008');
+
+    MesonTransaction::query()->create([
+        'transaction_id' => 'EXISTING-1',
+        'transaction_type' => 'Picking&Packing',
+        'document_number' => 'DOC-EXISTING',
+        'transaction_time' => '2026-08-15 09:00:00',
+        'qty_each_fm' => 42,
+        'operator_id' => 1,
+        'operator_username' => 'CA1OPS008',
+    ]);
+
+    $file = UploadedFile::fake()->createWithContent('meson.xlsx', buildMesonProductivityWorkbook([
+        mesonRow('WH1', 'T1', 'Receiving', 'DOC-A', '2026-08-15 08:30:00', 'SKU1', '1', 'CA1OPS008'),
+    ]));
+
+    $this->post(route('administration.packing-productivity.upload'), [
+        'start_date' => '2026-08-15',
+        'end_date' => '2026-08-15',
+        'file' => $file,
+    ])->assertRedirect();
+
+    $this->post(route('administration.packing-productivity.confirm'))
+        ->assertRedirect(route('administration.packing-productivity.import'))
+        ->assertSessionHas('error');
+
+    // The existing period data must survive a failed import.
+    $this->assertDatabaseHas('meson_transactions', ['transaction_id' => 'EXISTING-1', 'qty_each_fm' => 42]);
+});
+
+test('transaction types fall back to both packing variants', function () {
+    expect(app(PackingProductivityService::class)->transactionTypes())
+        ->toContain('Packing')
+        ->toContain('Picking&Packing');
+});
+
+test('admin dashboard can be filtered by productivity role', function () {
+    seedPackingOperator('CA1OPS008');
+
+    foreach ([
+        ['T1', 'Picking&Packing', 'DOC-A', 10],
+        ['T2', 'Packing', 'DOC-B', 100],
+    ] as [$id, $type, $doc, $qty]) {
+        MesonTransaction::query()->create([
+            'transaction_id' => $id,
+            'transaction_type' => $type,
+            'document_number' => $doc,
+            'transaction_time' => '2026-08-15 09:00:00',
+            'qty_each_fm' => $qty,
+            'operator_id' => 1,
+            'operator_username' => 'CA1OPS008',
+        ]);
+    }
+
+    $service = app(PackingProductivityService::class);
+    $filters = ['start_date' => '2026-08-15', 'end_date' => '2026-08-15'];
+
+    expect($service->dashboard($filters)['summary']['total_items'])->toBe(110.0)
+        ->and($service->dashboard($filters + ['role' => 'picker'])['summary']['total_items'])->toBe(10.0)
+        ->and($service->dashboard($filters + ['role' => 'packer'])['summary']['total_items'])->toBe(100.0);
+});
+
+test('scheduled hours follow the working calendar instead of a flat seven hours', function () {
+    foreach ([
+        [1, 'Monday', true, 8], [2, 'Tuesday', true, 8], [3, 'Wednesday', true, 8],
+        [4, 'Thursday', true, 8], [5, 'Friday', true, 8], [6, 'Saturday', true, 5],
+        [7, 'Sunday', false, 0],
+    ] as [$day, $name, $working, $hours]) {
+        WorkingCalendar::query()->create([
+            'day_of_week' => $day,
+            'day_name' => $name,
+            'is_working_day' => $working,
+            'working_hours' => $hours,
+        ]);
+    }
+
+    // August 2026: 21 weekdays * 8h + 5 Saturdays * 5h + 5 Sundays * 0h = 193h.
+    expect(app(PackingProductivityService::class)
+        ->scheduledHours(Carbon::parse('2026-08-01'), Carbon::parse('2026-08-31')))
+        ->toBe(193.0);
+});
+
+test('per worker rate is derived from the worker own active hours', function () {
+    seedPackingOperator('CA1OPS008');
+
+    foreach ([
+        ['T1', 'DOC-A', '2026-08-15 08:00:00', 5],
+        ['T2', 'DOC-B', '2026-08-15 08:06:00', 5],
+    ] as [$id, $doc, $time, $qty]) {
+        MesonTransaction::query()->create([
+            'transaction_id' => $id,
+            'transaction_type' => 'Picking&Packing',
+            'document_number' => $doc,
+            'transaction_time' => $time,
+            'qty_each_fm' => $qty,
+            'operator_id' => 1,
+            'operator_username' => 'CA1OPS008',
+        ]);
+    }
+
+    $data = app(PackingProductivityService::class)
+        ->dashboard(['start_date' => '2026-08-15', 'end_date' => '2026-08-15']);
+
+    $worker = $data['per_worker'][0];
+
+    // 6 minutes of active time for 10 items => 100 items/hour, not 10 / 7h.
+    expect($worker['estimated_active_hours'])->toBe(0.1)
+        ->and($worker['items_per_hour'])->toBe(100.0)
+        ->and($data['summary']['labor_hours'])->toBe(0.1);
 });
 
 function buildMesonProductivityWorkbookWithHeaders(array $headers, array $rows): string
