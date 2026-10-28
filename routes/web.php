@@ -9,6 +9,7 @@ use App\Http\Controllers\LeaderAuthController;
 use App\Http\Controllers\LeaderboardController;
 use App\Http\Controllers\LeaderPanelController;
 use App\Http\Controllers\ManpowerPlanningController;
+use App\Http\Controllers\ManpowerReportController;
 use App\Http\Controllers\MasterDataController;
 use App\Http\Controllers\PackingController;
 use App\Http\Controllers\PackingProductivityController;
@@ -113,6 +114,8 @@ Route::get('/administration/reports/atk-stock-card', [AtkController::class, 'sto
 Route::get('/administration/reports/atk-stock-card/print', [AtkController::class, 'printStockCard'])->name('administration.reports.atk-stock-card.print');
 Route::get('/administration/reports/rf-device-usage', [ReportController::class, 'rfDeviceUsage'])->name('administration.reports.rf-device-usage');
 Route::get('/administration/reports/daily-worker-activity', [ReportController::class, 'dailyWorkerActivity'])->name('administration.reports.daily-worker-activity');
+Route::get('/administration/reports/manpower', [ManpowerReportController::class, 'index'])->name('administration.reports.manpower');
+Route::get('/administration/reports/manpower/print', [ManpowerReportController::class, 'print'])->name('administration.reports.manpower.print');
 Route::get('/administration/manpower-planning', [ManpowerPlanningController::class, 'index'])->name('administration.manpower-planning');
 Route::post('/administration/manpower-planning', [ManpowerPlanningController::class, 'store'])->name('administration.manpower-planning.store');
 Route::get('/administration/manpower-planning/history', [ManpowerPlanningController::class, 'history'])->name('administration.manpower-planning.history');

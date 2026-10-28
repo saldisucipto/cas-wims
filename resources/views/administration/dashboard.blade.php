@@ -249,6 +249,10 @@
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.manpower-planning' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.manpower-planning' ? 'true' : 'false' }}">Manpower
                                     Planning</a></li>
+                            <li><a href="{{ route('administration.reports.manpower') }}"
+                                    class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ \Illuminate\Support\Str::startsWith($currentRoute, 'administration.reports.manpower') ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
+                                    data-active="{{ $currentRoute === 'administration.reports.manpower' ? 'true' : 'false' }}">Manpower
+                                    Report</a></li>
                             <li><a href="{{ route('administration.shift-schedules') }}"
                                     class="sidebar-link block rounded-lg px-3 py-2 text-sm {{ $currentRoute === 'administration.shift-schedules' || $currentRoute === 'administration.shift-schedules.create' || $currentRoute === 'administration.shift-schedules.show' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-100' }}"
                                     data-active="{{ $currentRoute === 'administration.shift-schedules' ? 'true' : 'false' }}">Shift

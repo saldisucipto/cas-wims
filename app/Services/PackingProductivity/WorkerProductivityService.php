@@ -250,6 +250,254 @@ class WorkerProductivityService
     }
 
     /**
+     * Aggregated performance per worker per operational date.
+     *
+     * One row represents one person on one day, so the manpower report can show
+     * the shift duration, the productive hours and the output side by side.
+     *
+     * @return array{rows: array<int, array<string, mixed>>, from: Carbon, to: Carbon}
+     */
+    public function dailyPerformance(Carbon $from, Carbon $to, ?string $role = null): array
+    {
+        $fromWall = $from->copy()->startOfDay();
+        $toWall = $to->copy()->endOfDay();
+
+        $rangeStart = OperationalClock::fromWallClock($fromWall);
+        $rangeEnd = OperationalClock::fromWallClock($toWall);
+        $types = $this->productivity->typesForRole($role);
+        $sessionType = match ($role) {
+            'picker' => 'rf',
+            'packer' => 'packing',
+            default => null,
+        };
+
+        $sessions = WorkingSession::query()
+            ->with([
+                'dailyWorker:id,name,employee_code,function',
+                'wmsAccount:id,username,function',
+                'packingStation:id,name',
+                'rfDevice:id,code',
+            ])
+            ->whereNotNull('wms_account_id')
+            ->when($sessionType, fn ($query) => $query->where('session_type', $sessionType))
+            ->where('started_at', '<=', $rangeEnd)
+            ->where(function ($query) use ($rangeStart) {
+                $query->whereNull('ended_at')->orWhere('ended_at', '>=', $rangeStart);
+            })
+            ->orderBy('started_at')
+            ->get();
+
+        $transactionsByOperator = $sessions->isEmpty()
+            ? collect()
+            : MesonTransaction::query()
+                ->whereIn('operator_id', $sessions->pluck('wms_account_id')->unique()->all())
+                ->whereBetween('transaction_time', [$fromWall, $toWall])
+                ->when($types !== null, fn ($query) => $query->whereIn('transaction_type', $types))
+                ->get()
+                ->groupBy('operator_id');
+
+        $threshold = $this->productivity->inactivityThresholdMinutes();
+        $rows = [];
+        $counted = [];
+
+        foreach ($sessions as $session) {
+            if ($session->started_at === null) {
+                continue;
+            }
+
+            $window = $this->sessionWindow($session);
+            $workerKey = $session->daily_worker_id !== null
+                ? 'worker:'.$session->daily_worker_id
+                : 'operator:'.$session->wms_account_id;
+
+            $sessionRows = ($transactionsByOperator->get($session->wms_account_id) ?? collect())
+                ->filter(fn (MesonTransaction $row) => $row->transaction_time->between($window['start'], $window['end']))
+                ->reject(function (MesonTransaction $row) use ($workerKey, &$counted) {
+                    if (isset($counted[$workerKey][$row->transaction_id])) {
+                        return true;
+                    }
+
+                    $counted[$workerKey][$row->transaction_id] = true;
+
+                    return false;
+                });
+
+            // A session may stay open for days (force close), so it is split by
+            // A session may stay open for days (force close), so it is split by
+            // date. Only dates with real activity, the clock-in date, or the
+            // closing date produce a row.
+            $clockInDate = $window['start']->toDateString();
+            $clockOutDate = $window['end']->toDateString();
+            $cursor = $window['start']->copy()->startOfDay();
+            $lastDay = $window['end']->copy()->startOfDay();
+
+            while ($cursor->lte($lastDay)) {
+                $dayStart = $cursor->copy()->startOfDay();
+                $dayEnd = $cursor->copy()->endOfDay();
+                $date = $dayStart->toDateString();
+                $cursor->addDay();
+
+                if ($date < $fromWall->toDateString() || $date > $toWall->toDateString()) {
+                    continue;
+                }
+
+                $portionStart = $window['start']->gt($dayStart) ? $window['start']->copy() : $dayStart->copy();
+                $portionEnd = $window['end']->lt($dayEnd) ? $window['end']->copy() : $dayEnd->copy();
+
+                if ($portionEnd->lte($portionStart)) {
+                    continue;
+                }
+
+                $portionRows = $sessionRows
+                    ->filter(fn (MesonTransaction $transaction) => $transaction->transaction_time->between($portionStart, $portionEnd));
+
+                $isClockInDate = $date === $clockInDate;
+                $isClockOutDate = $session->ended_at !== null && $date === $clockOutDate;
+
+                // Skip days the session merely straddled with no activity at all.
+                if ($portionRows->isEmpty() && ! $isClockInDate && ! $isClockOutDate) {
+                    continue;
+                }
+
+                $key = $workerKey.'|'.$date;
+
+                $rows[$key] ??= [
+                    'date' => $date,
+                    'daily_worker_id' => $session->daily_worker_id,
+                    'employee_code' => $session->dailyWorker?->employee_code,
+                    'name' => $session->dailyWorker?->name ?? $session->wmsAccount?->username ?? 'Unknown',
+                    'username' => $session->wmsAccount?->username,
+                    'function' => $session->dailyWorker?->function ?? $session->wmsAccount?->function ?? '-',
+                    'roles' => [],
+                    'stations' => [],
+                    'devices' => [],
+                    'sessions' => 0,
+                    'clock_in' => null,
+                    'clock_out' => null,
+                    'duration_minutes' => 0,
+                    'active_minutes' => 0,
+                    'orders' => 0,
+                    'lines' => 0,
+                    'items' => 0.0,
+                    'is_working' => false,
+                    'cross_day' => false,
+                    'documents' => [],
+                ];
+
+                $row = &$rows[$key];
+
+                $row['roles'][$session->session_type] = true;
+                $row['sessions']++;
+                $row['lines'] += $portionRows->count();
+                $row['items'] += (float) $portionRows->sum(fn (MesonTransaction $transaction) => $transaction->qty_each_fm ?? 0);
+                $row['active_minutes'] += $this->productivity->estimatedActiveMinutes(
+                    $portionRows->pluck('transaction_time'),
+                    $threshold,
+                );
+
+                foreach ($portionRows->pluck('document_number')->filter()->unique() as $document) {
+                    $row['documents'][$document] = true;
+                }
+
+                if ($session->packingStation?->name) {
+                    $row['stations'][$session->packingStation->name] = true;
+                }
+
+                if ($session->rfDevice?->code) {
+                    $row['devices'][$session->rfDevice->code] = true;
+                }
+
+                if ($session->ended_at === null && $date === OperationalClock::now()->toDateString()) {
+                    $row['is_working'] = true;
+                }
+
+                $crossDay = $clockInDate !== $clockOutDate;
+
+                if ($crossDay) {
+                    $row['cross_day'] = true;
+                }
+
+                // Clock-in only belongs to the day the session started; on the
+                // following days the shift is measured from the first activity,
+                // because the session itself was never closed on that day.
+                $firstActivity = $portionRows->min('transaction_time');
+                $lastActivity = $portionRows->max('transaction_time');
+
+                $dayStartPoint = $isClockInDate
+                    ? $window['start']->copy()
+                    : ($firstActivity !== null ? Carbon::parse($firstActivity) : $portionStart->copy());
+
+                if ($isClockInDate && $firstActivity !== null) {
+                    $firstActivityAt = Carbon::parse($firstActivity);
+
+                    if ($firstActivityAt->lt($dayStartPoint)) {
+                        $dayStartPoint = $firstActivityAt;
+                    }
+                }
+
+                $dayEndPoint = $isClockOutDate
+                    ? $window['end']->copy()
+                    : ($lastActivity !== null ? Carbon::parse($lastActivity) : $dayStartPoint->copy());
+
+                if ($isClockOutDate && $lastActivity !== null) {
+                    $lastActivityAt = Carbon::parse($lastActivity);
+
+                    if ($lastActivityAt->gt($dayEndPoint)) {
+                        $dayEndPoint = $lastActivityAt;
+                    }
+                }
+
+                if ($dayEndPoint->lt($dayStartPoint)) {
+                    $dayEndPoint = $dayStartPoint->copy();
+                }
+
+                if ($row['clock_in'] === null || $dayStartPoint->lt($row['clock_in'])) {
+                    $row['clock_in'] = $dayStartPoint->copy();
+                }
+
+                if ($row['clock_out'] === null || $dayEndPoint->gt($row['clock_out'])) {
+                    $row['clock_out'] = $dayEndPoint->copy();
+                }
+
+                $row['duration_minutes'] += max(0, (int) round($dayStartPoint->diffInMinutes($dayEndPoint, false)));
+
+                unset($row);
+            }
+        }
+
+        $result = array_map(function (array $row): array {
+            $row['orders'] = count($row['documents']);
+            $row['duration_hours'] = round($row['duration_minutes'] / 60, 2);
+            $row['active_hours'] = round($row['active_minutes'] / 60, 2);
+            $row['orders_per_hour'] = $row['active_hours'] > 0 ? round($row['orders'] / $row['active_hours'], 2) : null;
+            $row['items_per_hour'] = $row['active_hours'] > 0 ? round($row['items'] / $row['active_hours'], 2) : null;
+            $row['role'] = collect(array_keys($row['roles']))
+                ->map(fn (string $type) => $type === 'rf' ? 'picker' : 'packer')
+                ->unique()
+                ->implode('+');
+            $row['role'] = $row['role'] === '' ? '-' : $row['role'];
+            $row['station'] = implode(', ', array_keys($row['stations']));
+            $row['device'] = implode(', ', array_keys($row['devices']));
+
+            unset($row['documents'], $row['roles'], $row['stations'], $row['devices'], $row['duration_minutes'], $row['active_minutes']);
+
+            return $row;
+        }, array_values($rows));
+
+        $result = array_values(array_filter($result, function (array $row): bool {
+            // Drop rows that carry no work evidence at all (clock-in only, no
+            // transaction, already closed): they would pollute the report.
+            return $row['duration_hours'] > 0 || $row['orders'] > 0 || $row['is_working'];
+        }));
+
+        usort($result, function (array $a, array $b) {
+            return [$b['date'], $a['name']] <=> [$a['date'], $b['name']];
+        });
+
+        return ['rows' => $result, 'from' => $fromWall, 'to' => $toWall];
+    }
+
+    /**
      * Leaderboard for one operational day, aggregated per person.
      *
      * @return array{rows: array<int, array<string, mixed>>, date: Carbon, generated_at: Carbon, data_until: Carbon|null, is_stale: bool}
