@@ -395,13 +395,17 @@ class WorkerProductivityService
 
         $result = array_map(function (array $row): array {
             $row['orders'] = count($row['documents']);
+            $row['active_minutes'] = (int) round($row['active_minutes']);
             $row['active_hours'] = round($row['active_minutes'] / 60, 2);
             $row['days_worked'] = count($row['days']);
+
+            // Rates are derived from the exact same active_hours value the UI
+            // prints, so orders / displayed hours always matches the rate.
             $row['items_per_hour'] = $row['active_hours'] > 0 ? round($row['items'] / $row['active_hours'], 2) : null;
             $row['orders_per_hour'] = $row['active_hours'] > 0 ? round($row['orders'] / $row['active_hours'], 2) : null;
             $row['orders_per_day'] = $row['days_worked'] > 0 ? round($row['orders'] / $row['days_worked'], 2) : null;
 
-            unset($row['documents'], $row['days'], $row['active_minutes']);
+            unset($row['documents'], $row['days']);
 
             return $row;
         }, array_values($rows));

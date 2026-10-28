@@ -112,6 +112,8 @@
                                             <span class="flex shrink-0 items-center gap-2">
                                                 {{ number_format($row['items']) }} items
                                                 &middot;
+                                                {{ $row['active_hours'] !== null ? rtrim(rtrim(number_format($row['active_hours'], 2, '.', ''), '0'), '.') : '0' }} jam aktif
+                                                &middot;
                                                 {{ $row['orders_per_hour'] !== null ? number_format($row['orders_per_hour'], 1).' order/jam' : '—' }}
                                                 @if ($row['is_working'])
                                                     <span class="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">aktif</span>
@@ -141,6 +143,9 @@
             <p class="mt-5 text-xs text-slate-500">
                 Picking dihitung dari transaksi <code>Picking&Packing</code>, packing dari transaksi
                 <code>Packing</code> &mdash; dua sumber terpisah, tidak pernah digabung.
+                <span class="font-semibold">order/jam = orders &divide; jam aktif</span>, di mana jam aktif adalah
+                durasi sesi dikurangi jeda diam lebih dari 30 menit (tiap jeda dihitung maksimal 30 menit).
+                Jadi order/jam bisa lebih tinggi dari orders &divide; durasi shift penuh.
                 Window per sesi mulai dari clock-in dan berhenti saat sesi ditutup.
             </p>
         </section>
