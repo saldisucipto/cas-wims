@@ -22,6 +22,12 @@ class WelcomeDashboardController extends Controller
         $now = now();
         $menuCards = [
             [
+                'icon' => '📊',
+                'title' => 'Leaderboard Productivity',
+                'description' => ['Peringkat produktivitas', 'operator packing & picking.'],
+                'href' => route('leaderboard.productivity'),
+            ],
+            [
                 'icon' => '📦',
                 'title' => 'Registrasi Meja Packing',
                 'description' => ['Registrasi Pekerja Harian', 'sebelum mulai shift operasional.'],

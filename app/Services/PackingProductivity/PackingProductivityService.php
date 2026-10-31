@@ -2,6 +2,7 @@
 
 namespace App\Services\PackingProductivity;
 
+use App\Models\DailyWorker;
 use App\Models\MesonImportBatch;
 use App\Models\MesonTransaction;
 use App\Models\SystemSetting;
@@ -10,6 +11,7 @@ use App\Models\WorkingCalendar;
 use App\Models\WorkingSession;
 use App\Services\Import\SpreadsheetReader;
 use Carbon\Carbon;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -255,16 +257,22 @@ class PackingProductivityService
      */
     public function dashboard(array $filters): array
     {
-        $rows = $this->queryRows($filters);
         $start = isset($filters['start_date']) ? Carbon::parse($filters['start_date']) : ($this->dataStart() ?? now()->startOfDay());
         $end = isset($filters['end_date']) ? Carbon::parse($filters['end_date']) : ($this->dataEnd() ?? now()->endOfDay());
         $scheduledHours = $this->scheduledHours($start, $end);
 
+        // Aggregates are pushed into the database and the only per-row pass keeps
+        // two integers per transaction. Hydrating the transactions as Eloquent
+        // models exhausts the 128M PHP memory limit as soon as the period holds
+        // a page-sized batch of rows.
+        $groups = $this->aggregateGroups($filters);
+        $activeMinutes = $this->activeMinutesByGroup($filters, $this->inactivityThresholdMinutes());
+
         return [
-            'summary' => $this->summarize($rows, $scheduledHours),
-            'per_worker' => $this->aggregateByWorker($rows),
-            'hourly' => $this->aggregateByHour($rows),
-            'daily' => $this->aggregateByDay($rows),
+            'summary' => $this->summarize($filters, count($groups), $activeMinutes, $scheduledHours),
+            'per_worker' => $this->aggregateByWorker($groups, $activeMinutes),
+            'hourly' => $this->aggregateByHour($filters),
+            'daily' => $this->aggregateByDay($filters),
             'role' => $filters['role'] ?? null,
             'transaction_types' => $this->typesForRole($filters['role'] ?? null),
         ];
@@ -617,12 +625,13 @@ class PackingProductivityService
     }
 
     /**
+     * Filtered transactions, kept on the query builder so nothing is hydrated.
+     *
      * @param  array<string, mixed>  $filters
-     * @return Collection<int, MesonTransaction>
      */
-    private function queryRows(array $filters): Collection
+    private function baseQuery(array $filters): Builder
     {
-        $query = MesonTransaction::query()->with(['operator', 'dailyWorker']);
+        $query = DB::table('meson_transactions');
 
         if (! empty($filters['start_date'])) {
             $query->where('transaction_time', '>=', Carbon::parse($filters['start_date'])->startOfDay());
@@ -645,7 +654,7 @@ class PackingProductivityService
         }
 
         if (! empty($filters['function'])) {
-            $query->whereHas('operator', fn ($q) => $q->where('function', $filters['function']));
+            $query->whereIn('operator_id', DB::table('wms_accounts')->select('id')->where('function', $filters['function']));
         }
 
         if (! empty($filters['transaction_type'])) {
@@ -662,35 +671,159 @@ class PackingProductivityService
             $query->where('status', $filters['status']);
         }
 
-        return $query->get();
+        return $query;
     }
 
     /**
-     * @param  Collection<int, MesonTransaction>  $rows
+     * SQL key matching the PHP grouping used by the report: a transaction belongs
+     * to its daily worker when known, otherwise to its operator account.
+     */
+    private function groupKeySql(): string
+    {
+        return 'CASE'
+            .' WHEN daily_worker_id IS NOT NULL THEN '.$this->concatSql('worker:', 'daily_worker_id')
+            .' WHEN operator_id IS NOT NULL THEN '.$this->concatSql('operator:', 'operator_id')
+            ." ELSE 'operator:unknown' END";
+    }
+
+    private function concatSql(string $prefix, string $column): string
+    {
+        return match (DB::connection()->getDriverName()) {
+            'sqlite', 'pgsql' => "'{$prefix}' || {$column}",
+            default => "CONCAT('{$prefix}', {$column})",
+        };
+    }
+
+    /**
+     * Hour bucket expression, always rendered as "Y-m-d H:00".
+     */
+    private function hourBucketSql(): string
+    {
+        return match (DB::connection()->getDriverName()) {
+            'sqlite' => "strftime('%Y-%m-%d %H:00', transaction_time)",
+            'pgsql' => "to_char(transaction_time, 'YYYY-MM-DD HH24:00')",
+            default => "DATE_FORMAT(transaction_time, '%Y-%m-%d %H:00')",
+        };
+    }
+
+    /**
+     * Per-person totals aggregated by the database.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, object>
+     */
+    private function aggregateGroups(array $filters): Collection
+    {
+        $key = $this->groupKeySql();
+
+        return $this->baseQuery($filters)
+            ->selectRaw("{$key} AS group_key")
+            ->selectRaw('MIN(daily_worker_id) AS daily_worker_id')
+            ->selectRaw('MIN(operator_id) AS operator_id')
+            ->selectRaw('COUNT(*) AS line_count')
+            ->selectRaw('COUNT(DISTINCT document_number) AS order_count')
+            ->selectRaw('COALESCE(SUM(qty_each_fm), 0) AS item_total')
+            ->groupByRaw($key)
+            ->get();
+    }
+
+    /**
+     * Capped-gap active minutes per person.
+     *
+     * Only the timestamps are streamed, in bounded chunks of two integers per
+     * transaction, so the report stays inside the PHP memory limit no matter how
+     * many rows the period holds.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array<string, int>
+     */
+    private function activeMinutesByGroup(array $filters, int $thresholdMinutes): array
+    {
+        $timestamps = [];
+
+        $this->baseQuery($filters)
+            ->select(['id', 'daily_worker_id', 'operator_id', 'transaction_time'])
+            ->orderBy('id')
+            ->chunkById(5000, function (Collection $rows) use (&$timestamps): void {
+                foreach ($rows as $row) {
+                    $seconds = $row->transaction_time === null ? false : strtotime((string) $row->transaction_time);
+
+                    if ($seconds === false) {
+                        continue;
+                    }
+
+                    $key = $row->daily_worker_id !== null
+                        ? 'worker:'.$row->daily_worker_id
+                        : ($row->operator_id !== null ? 'operator:'.$row->operator_id : 'operator:unknown');
+
+                    $timestamps[$key][] = $seconds;
+                }
+            });
+
+        $minutes = [];
+
+        foreach ($timestamps as $key => $groupTimestamps) {
+            $minutes[$key] = $this->activeMinutesFromSeconds($groupTimestamps, $thresholdMinutes);
+        }
+
+        return $minutes;
+    }
+
+    /**
+     * Same capped-gap rule as {@see estimatedActiveMinutes()}, on plain UNIX
+     * timestamps to avoid allocating a Carbon instance per transaction.
+     *
+     * @param  array<int, int>  $timestamps
+     */
+    private function activeMinutesFromSeconds(array $timestamps, int $thresholdMinutes): int
+    {
+        if (count($timestamps) < 2) {
+            return 0;
+        }
+
+        sort($timestamps);
+
+        $total = 0.0;
+        $previous = $timestamps[0];
+        $count = count($timestamps);
+
+        for ($index = 1; $index < $count; $index++) {
+            $gap = abs(($timestamps[$index] - $previous) / 60);
+
+            if ($gap > 0) {
+                $total += min($gap, (float) $thresholdMinutes);
+            }
+
+            $previous = $timestamps[$index];
+        }
+
+        return (int) round($total);
+    }
+
+    /**
+     * @param  int  $workerCount  Number of people that produced transactions.
+     * @param  array<string, int>  $activeMinutes  Active minutes keyed by group key.
      * @return array<string, mixed>
      */
-    private function summarize(Collection $rows, float $scheduledHours): array
+    private function summarize(array $filters, int $workerCount, array $activeMinutes, float $scheduledHours): array
     {
-        $threshold = $this->inactivityThresholdMinutes();
+        $aggregate = $this->baseQuery($filters)
+            ->selectRaw('COUNT(*) AS line_count')
+            ->selectRaw('COUNT(DISTINCT document_number) AS order_count')
+            ->selectRaw('COALESCE(SUM(qty_each_fm), 0) AS item_total')
+            ->selectRaw('COUNT(DISTINCT operator_id) AS operator_count')
+            ->first();
 
-        $orders = $rows->pluck('document_number')->filter()->unique()->count();
-        $lines = $rows->count();
-        $items = (float) $rows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0);
-        $operators = $rows->pluck('operator_id')->filter()->unique()->count();
-        $workers = $rows->pluck('daily_worker_id')->filter()->unique()->count();
+        $orders = (int) ($aggregate->order_count ?? 0);
+        $lines = (int) ($aggregate->line_count ?? 0);
+        $items = (float) ($aggregate->item_total ?? 0);
+        $operators = (int) ($aggregate->operator_count ?? 0);
 
         // Labour hours are the sum of each person's capped-gap active time, so the
         // period throughput is divided by time actually spent working, not by the
         // calendar span of the whole period.
-        $laborHours = 0.0;
-
-        foreach ($this->groupRowsByWorker($rows) as $workerRows) {
-            $laborHours += $this->estimatedActiveMinutes($workerRows->pluck('transaction_time'), $threshold) / 60;
-        }
-
-        $laborHours = round($laborHours, 2);
+        $laborHours = round(array_sum($activeMinutes) / 60, 2);
         $rateBasis = $laborHours > 0 ? $laborHours : $scheduledHours;
-        $workerCount = count($this->groupRowsByWorker($rows));
         $capacityHours = $scheduledHours * max(1, $workerCount);
 
         return [
@@ -709,44 +842,37 @@ class PackingProductivityService
     }
 
     /**
-     * Group transactions by the person who performed them.
-     *
-     * @param  Collection<int, MesonTransaction>  $rows
-     * @return Collection<string, Collection<int, MesonTransaction>>
-     */
-    private function groupRowsByWorker(Collection $rows): Collection
-    {
-        return $rows->groupBy(fn (MesonTransaction $row) => $row->daily_worker_id !== null
-            ? 'worker:'.$row->daily_worker_id
-            : 'operator:'.($row->operator_id ?? 'unknown'));
-    }
-
-    /**
-     * @param  Collection<int, MesonTransaction>  $rows
+     * @param  Collection<int, object>  $groups
+     * @param  array<string, int>  $activeMinutes
      * @return array<int, array<string, mixed>>
      */
-    private function aggregateByWorker(Collection $rows): array
+    private function aggregateByWorker(Collection $groups, array $activeMinutes): array
     {
-        $threshold = $this->inactivityThresholdMinutes();
+        $operatorIds = $groups->pluck('operator_id')->filter()->unique()->values()->all();
+        $workerIds = $groups->pluck('daily_worker_id')->filter()->unique()->values()->all();
+
+        $operators = WmsAccount::query()->whereIn('id', $operatorIds)->get(['id', 'username', 'function'])->keyBy('id');
+        $workers = DailyWorker::query()->whereIn('id', $workerIds)->get(['id', 'name'])->keyBy('id');
+
         $result = [];
 
-        foreach ($this->groupRowsByWorker($rows) as $workerRows) {
-            $first = $workerRows->first();
-            $dailyWorker = $first->dailyWorker;
-            $operator = $first->operator;
+        foreach ($groups as $group) {
+            $dailyWorkerId = $group->daily_worker_id !== null ? (int) $group->daily_worker_id : null;
+            $operatorId = $group->operator_id !== null ? (int) $group->operator_id : null;
+            $dailyWorker = $dailyWorkerId !== null ? $workers->get($dailyWorkerId) : null;
+            $operator = $operatorId !== null ? $operators->get($operatorId) : null;
 
-            $orders = $workerRows->pluck('document_number')->filter()->unique()->count();
-            $lines = $workerRows->count();
-            $items = (float) $workerRows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0);
-            $activeMinutes = $this->estimatedActiveMinutes($workerRows->pluck('transaction_time'), $threshold);
-            $activeHours = round($activeMinutes / 60, 2);
+            $orders = (int) $group->order_count;
+            $lines = (int) $group->line_count;
+            $items = (float) $group->item_total;
+            $activeHours = round(($activeMinutes[$group->group_key] ?? 0) / 60, 2);
 
             // A worker's rate must use their own time, never the period calendar.
             $hasRate = $activeHours > 0;
 
             $result[] = [
-                'daily_worker_id' => $first->daily_worker_id,
-                'operator_id' => $first->operator_id,
+                'daily_worker_id' => $dailyWorkerId,
+                'operator_id' => $operatorId,
                 'name' => $dailyWorker?->name ?? $operator?->username ?? 'Unknown',
                 'username' => $operator?->username,
                 'function' => $operator?->function ?? '-',
@@ -771,27 +897,36 @@ class PackingProductivityService
      * Merging every day into one 24-hour bucket turns a three-day import into a
      * single inflated bar, so the date is kept as part of the key.
      *
-     * @param  Collection<int, MesonTransaction>  $rows
+     * @param  array<string, mixed>  $filters
      * @return array<int, array<string, mixed>>
      */
-    private function aggregateByHour(Collection $rows): array
+    private function aggregateByHour(array $filters): array
     {
+        $bucket = $this->hourBucketSql();
+
+        $rows = $this->baseQuery($filters)
+            ->selectRaw("{$bucket} AS bucket")
+            ->selectRaw('COUNT(DISTINCT document_number) AS order_count')
+            ->selectRaw('COUNT(*) AS line_count')
+            ->selectRaw('COALESCE(SUM(qty_each_fm), 0) AS item_total')
+            ->whereNotNull('transaction_time')
+            ->groupByRaw($bucket)
+            ->get();
+
         $result = [];
 
-        foreach ($rows->groupBy(fn (MesonTransaction $row) => $row->transaction_time?->format('Y-m-d H:00')) as $bucket => $hourRows) {
-            if ($bucket === null) {
-                continue;
-            }
+        foreach ($rows as $row) {
+            $bucketValue = (string) $row->bucket;
 
-            [$date, $hour] = explode(' ', $bucket, 2);
+            [$date, $hour] = explode(' ', $bucketValue, 2);
 
             $result[] = [
                 'date' => $date,
                 'hour' => $hour,
-                'bucket' => $bucket,
-                'orders' => $hourRows->pluck('document_number')->filter()->unique()->count(),
-                'lines' => $hourRows->count(),
-                'items' => (float) $hourRows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0),
+                'bucket' => $bucketValue,
+                'orders' => (int) $row->order_count,
+                'lines' => (int) $row->line_count,
+                'items' => (float) $row->item_total,
             ];
         }
 
@@ -801,23 +936,28 @@ class PackingProductivityService
     }
 
     /**
-     * @param  Collection<int, MesonTransaction>  $rows
+     * @param  array<string, mixed>  $filters
      * @return array<int, array<string, mixed>>
      */
-    private function aggregateByDay(Collection $rows): array
+    private function aggregateByDay(array $filters): array
     {
+        $rows = $this->baseQuery($filters)
+            ->selectRaw('DATE(transaction_time) AS bucket')
+            ->selectRaw('COUNT(DISTINCT document_number) AS order_count')
+            ->selectRaw('COUNT(*) AS line_count')
+            ->selectRaw('COALESCE(SUM(qty_each_fm), 0) AS item_total')
+            ->whereNotNull('transaction_time')
+            ->groupByRaw('DATE(transaction_time)')
+            ->get();
+
         $result = [];
 
-        foreach ($rows->groupBy(fn (MesonTransaction $row) => $row->transaction_time?->toDateString()) as $date => $dayRows) {
-            if ($date === null) {
-                continue;
-            }
-
+        foreach ($rows as $row) {
             $result[] = [
-                'date' => $date,
-                'orders' => $dayRows->pluck('document_number')->filter()->unique()->count(),
-                'lines' => $dayRows->count(),
-                'items' => (float) $dayRows->sum(fn (MesonTransaction $row) => $row->qty_each_fm ?? 0),
+                'date' => (string) $row->bucket,
+                'orders' => (int) $row->order_count,
+                'lines' => (int) $row->line_count,
+                'items' => (float) $row->item_total,
             ];
         }
 
