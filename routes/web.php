@@ -34,6 +34,8 @@ Route::get('/rf-handheld-registration', [RfController::class, 'registration'])->
 Route::get('/rf-handheld-dashboard', [RfController::class, 'dashboard'])->name('rf.dashboard');
 
 Route::get('/leaderboard-productivity', [LeaderboardController::class, 'index'])->name('leaderboard.productivity');
+Route::get('/leaderboard-productivity/weekly', [LeaderboardController::class, 'weekly'])->name('leaderboard.productivity.weekly');
+Route::get('/leaderboard-productivity/weekly/print', [LeaderboardController::class, 'weeklyPrint'])->name('leaderboard.productivity.weekly.print');
 
 Route::get('/administration-login', [AdministrationAuthController::class, 'create'])->name('administration.login');
 Route::post('/administration-login', [AdministrationAuthController::class, 'store'])->name('administration.login.submit');

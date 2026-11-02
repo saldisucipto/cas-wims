@@ -22,9 +22,13 @@
                             class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
                         <button class="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white">Tampilkan</button>
                     </form>
+                    <a href="{{ route('leaderboard.productivity.weekly', ['date' => $date->toDateString()]) }}" class="rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white">
+                        Weekly Rewards
+                    </a>
                     <p class="text-xs text-slate-500">
-                        Diperbarui {{ $generatedAt->format('d M Y H:i') }} &middot; auto refresh 60 detik
-                    </p>
+                         Diperbarui {{ $generatedAt->format('d M Y H:i') }} &middot; auto refresh 60 detik
+                     </p>
+
                 </div>
             </div>
 

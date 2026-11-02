@@ -120,6 +120,79 @@ test('leaderboard can be scoped to packing or rf sessions', function () {
         ->and($service->leaderboard(OperationalClock::today(), 'rf')['rows'][0]['name'])->toBe('PICKER ONLY');
 });
 
+test('weekly leaderboard accumulates productivity and ranks the top three workers', function () {
+    $top = boardWorker('WEEKLY TOP');
+    $topSession = boardSession($top, 'CA1OPS030');
+    boardTransaction($topSession, 'TR-W1', 'DOC-W1', 10, 120, 'Packing');
+    boardTransaction($topSession, 'TR-W2', 'DOC-W2', 8, 90, 'Packing');
+
+    $second = boardWorker('WEEKLY SECOND');
+    $secondSession = boardSession($second, 'CA1OPS031');
+    boardTransaction($secondSession, 'TR-W3', 'DOC-W3', 6, 60, 'Packing');
+
+    $this->get(route('leaderboard.productivity.weekly'))
+        ->assertOk()
+        ->assertSee('Weekly Productivity Rewards')
+        ->assertSee('WEEKLY TOP')
+        ->assertSee('WEEKLY SECOND');
+
+    $board = app(WorkerProductivityService::class)
+        ->weeklyLeaderboard(OperationalClock::today(), 'packer');
+
+    expect($board['rows'][0]['name'])->toBe('WEEKLY TOP')
+        ->and($board['rows'][0]['orders'])->toBe(2)
+        ->and($board['rows'][0]['items'])->toBe(18.0)
+        ->and($board['rows'][0]['rank'])->toBe(1)
+        ->and($board['rows'][1]['rank'])->toBe(2);
+});
+
+test('weekly leaderboard print supports combined and worker output', function () {
+    $worker = boardWorker('PDF WORKER');
+    $session = boardSession($worker, 'CA1OPS032');
+    boardTransaction($session, 'TR-PDF', 'DOC-PDF', 4, 30, 'Packing');
+
+    $this->get(route('leaderboard.productivity.weekly.print'))
+        ->assertOk()
+        ->assertSee('Weekly Productivity Rewards')
+        ->assertSee('PDF WORKER');
+
+    $this->get(route('leaderboard.productivity.weekly.print', ['worker' => 'worker:'.$worker->id]))
+        ->assertOk()
+        ->assertSee('PDF WORKER');
+});
+
+test('weekly leaderboard separates picker and packer productivity and starts on monday', function () {
+    $picker = boardWorker('WEEKLY PICKER', 'PICKER');
+    $pickerSession = boardSession($picker, 'CA1OPS033', 'rf');
+    boardTransaction($pickerSession, 'TR-WS-PICK', 'DOC-WS-PICK', 9, 60, 'Picking&Packing');
+
+    $packer = boardWorker('WEEKLY PACKER', 'PACKER');
+    $packerSession = boardSession($packer, 'CA1OPS034', 'packing');
+    boardTransaction($packerSession, 'TR-WS-PACK', 'DOC-WS-PACK', 5, 45, 'Packing');
+
+    $service = app(WorkerProductivityService::class);
+    $date = OperationalClock::today();
+
+    $pickerBoard = $service->weeklyLeaderboard($date, 'picker');
+    $packerBoard = $service->weeklyLeaderboard($date, 'packer');
+
+    expect($pickerBoard['rows'])->toHaveCount(1)
+        ->and($pickerBoard['rows'][0]['name'])->toBe('WEEKLY PICKER')
+        ->and($pickerBoard['rows'][0]['orders'])->toBe(1)
+        ->and($packerBoard['rows'])->toHaveCount(1)
+        ->and($packerBoard['rows'][0]['name'])->toBe('WEEKLY PACKER')
+        ->and($packerBoard['rows'][0]['orders'])->toBe(1)
+        ->and($pickerBoard['from']->toDateString())->toBe($date->startOfWeek(Carbon\Carbon::MONDAY)->toDateString())
+        ->and($pickerBoard['from']->format('l'))->toBe('Monday')
+        ->and($pickerBoard['to']->format('l'))->toBe('Sunday')
+        ->and(abs((int) round(Carbon\Carbon::parse($pickerBoard['to']->toDateString())->diffInDays(Carbon\Carbon::parse($pickerBoard['from']->toDateString()), false))))->toBe(6);
+
+    $this->get(route('leaderboard.productivity.weekly'))
+        ->assertOk()
+        ->assertSee('WEEKLY PICKER')
+        ->assertSee('WEEKLY PACKER');
+});
+
 test('leaderboard shows an empty state for a day without sessions', function () {
     $this->get(route('leaderboard.productivity', ['date' => '2026-01-01']))
         ->assertOk()

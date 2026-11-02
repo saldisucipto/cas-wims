@@ -37,6 +37,106 @@ class LeaderboardController extends Controller
         ]);
     }
 
+    public function weekly(Request $request)
+    {
+        $date = $request->filled('date')
+            ? Carbon::parse($request->string('date')->toString())
+            : OperationalClock::today();
+        $boards = $this->weeklyBoards($date);
+
+        return view('leaderboard.weekly', [
+            'boards' => $boards,
+            'date' => $date,
+            'weekStart' => $date->copy()->startOfWeek(Carbon::MONDAY),
+            'weekEnd' => $date->copy()->endOfWeek(Carbon::SUNDAY),
+            'generatedAt' => OperationalClock::now(),
+        ]);
+    }
+
+    public function weeklyPrint(Request $request)
+    {
+        $date = $request->filled('date')
+            ? Carbon::parse($request->string('date')->toString())
+            : OperationalClock::today();
+        $weekStart = $date->copy()->startOfWeek(Carbon::MONDAY);
+        $weekEnd = $date->copy()->endOfWeek(Carbon::SUNDAY);
+        $workerKey = $request->string('worker')->toString();
+        $role = $request->string('role')->toString();
+        $roles = in_array($role, ['picker', 'packer'], true) ? [$role] : ['picker', 'packer'];
+        $sections = [];
+
+        foreach ($roles as $sectionRole) {
+            $board = $this->weeklyBoard($date, $sectionRole, $sectionRole === 'picker' ? 'Picking Productivity' : 'Packing Productivity');
+            $dailyRows = $this->productivity->dailyPerformance($weekStart, $weekEnd, $sectionRole)['rows'];
+
+            if ($workerKey !== '') {
+                $board['rows'] = array_values(array_filter(
+                    $board['rows'],
+                    fn (array $row): bool => ($row['key'] ?? '') === $workerKey,
+                ));
+                $dailyRows = array_values(array_filter(
+                    $dailyRows,
+                    fn (array $row): bool => ($row['key'] ?? '') === $workerKey,
+                ));
+            }
+
+            $sections[] = [
+                ...$board,
+                'daily_rows' => $dailyRows,
+            ];
+        }
+
+        if ($workerKey !== '') {
+            $sections = array_values(array_filter($sections, fn (array $section): bool => $section['rows'] !== []));
+        }
+
+        return view('leaderboard.weekly-print', [
+            'sections' => $sections,
+            'date' => $date,
+            'weekStart' => $weekStart,
+            'weekEnd' => $weekEnd,
+            'generatedAt' => OperationalClock::now(),
+            'workerKey' => $workerKey,
+        ]);
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function weeklyBoards(Carbon $date): array
+    {
+        return [
+            'picker' => $this->weeklyBoard($date, 'picker', 'Picking Productivity'),
+            'packer' => $this->weeklyBoard($date, 'packer', 'Packing Productivity'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function weeklyBoard(Carbon $date, string $role, string $title): array
+    {
+        $board = $this->productivity->weeklyLeaderboard($date, $role);
+        $rows = $board['rows'];
+
+        return [
+            'key' => $role,
+            'title' => $title,
+            'role' => $role,
+            'types' => $this->packingProductivity->typesForRole($role) ?? [],
+            'rows' => $rows,
+            'top_three' => array_slice($rows, 0, 3),
+            'data_until' => $board['data_until'],
+            'is_stale' => $board['is_stale'],
+            'totals' => [
+                'orders' => array_sum(array_column($rows, 'orders')),
+                'items' => array_sum(array_column($rows, 'items')),
+                'active_hours' => array_sum(array_column($rows, 'active_hours')),
+                'workers' => count($rows),
+            ],
+        ];
+    }
+
     /**
      * @return array<string, mixed>
      */

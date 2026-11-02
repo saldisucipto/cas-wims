@@ -362,8 +362,10 @@ class WorkerProductivityService
                 $key = $workerKey.'|'.$date;
 
                 $rows[$key] ??= [
+                    'key' => $workerKey,
                     'date' => $date,
                     'daily_worker_id' => $session->daily_worker_id,
+
                     'employee_code' => $session->dailyWorker?->employee_code,
                     'name' => $session->dailyWorker?->name ?? $session->wmsAccount?->username ?? 'Unknown',
                     'username' => $session->wmsAccount?->username,
@@ -533,6 +535,71 @@ class WorkerProductivityService
         };
 
         return $this->aggregateRange($from, $to, $role, $sessionType);
+    }
+
+    public function weeklyLeaderboard(Carbon $date, ?string $role = null): array
+    {
+        $from = $date->copy()->startOfWeek(Carbon::MONDAY)->startOfDay();
+        $to = $date->copy()->endOfWeek(Carbon::SUNDAY)->endOfDay();
+        $dailyRows = $this->dailyPerformance($from, $to, $role)['rows'];
+        $grouped = [];
+
+        foreach ($dailyRows as $dailyRow) {
+            $key = $dailyRow['key'];
+
+            $grouped[$key] ??= [
+                'key' => $key,
+                'daily_worker_id' => $dailyRow['daily_worker_id'],
+                'employee_code' => $dailyRow['employee_code'],
+                'name' => $dailyRow['name'],
+                'username' => $dailyRow['username'],
+                'function' => $dailyRow['function'],
+                'sessions' => 0,
+                'days_worked' => 0,
+                'orders' => 0,
+                'lines' => 0,
+                'items' => 0.0,
+                'active_hours' => 0.0,
+                'is_working' => false,
+            ];
+
+            $grouped[$key]['sessions'] += $dailyRow['sessions'];
+            $grouped[$key]['days_worked']++;
+            $grouped[$key]['orders'] += $dailyRow['orders'];
+            $grouped[$key]['lines'] += $dailyRow['lines'];
+            $grouped[$key]['items'] += $dailyRow['items'];
+            $grouped[$key]['active_hours'] += $dailyRow['active_hours'];
+            $grouped[$key]['is_working'] = $grouped[$key]['is_working'] || $dailyRow['is_working'];
+        }
+
+        $rows = array_values(array_filter($grouped, fn (array $row): bool => $row['orders'] > 0));
+
+        foreach ($rows as &$row) {
+            $row['active_hours'] = round($row['active_hours'], 2);
+            $row['items'] = round($row['items'], 2);
+            $row['orders_per_hour'] = $row['active_hours'] > 0 ? round($row['orders'] / $row['active_hours'], 2) : null;
+        }
+
+        unset($row);
+
+        usort($rows, fn (array $a, array $b) => [$b['orders'], $b['items'], $a['name']] <=> [$a['orders'], $a['items'], $b['name']]);
+
+        foreach ($rows as $index => &$row) {
+            $row['rank'] = $index + 1;
+        }
+
+        unset($row);
+
+        $dataUntil = $this->latestSyncedAt();
+
+        return [
+            'rows' => $rows,
+            'from' => $from,
+            'to' => $to,
+            'generated_at' => OperationalClock::now(),
+            'data_until' => $dataUntil,
+            'is_stale' => $dataUntil === null || $dataUntil->lt($to),
+        ];
     }
 
     /**
