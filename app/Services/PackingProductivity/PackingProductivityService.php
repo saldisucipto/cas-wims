@@ -260,21 +260,56 @@ class PackingProductivityService
         $start = isset($filters['start_date']) ? Carbon::parse($filters['start_date']) : ($this->dataStart() ?? now()->startOfDay());
         $end = isset($filters['end_date']) ? Carbon::parse($filters['end_date']) : ($this->dataEnd() ?? now()->endOfDay());
         $scheduledHours = $this->scheduledHours($start, $end);
+        $role = $filters['role'] ?? null;
 
-        // Aggregates are pushed into the database and the only per-row pass keeps
-        // two integers per transaction. Hydrating the transactions as Eloquent
-        // models exhausts the 128M PHP memory limit as soon as the period holds
-        // a page-sized batch of rows.
-        $groups = $this->aggregateGroups($filters);
-        $activeMinutes = $this->activeMinutesByGroup($filters, $this->inactivityThresholdMinutes());
+        // Picker and Packer productivity are reported as two separate blocks,
+        // each measured against its own Meson transaction types. The two are
+        // never blended into one figure.
+        $blocks = [
+            'picker' => $this->roleBlock('picker', 'Picker', $filters, $scheduledHours),
+            'packer' => $this->roleBlock('packer', 'Packer', $filters, $scheduledHours),
+        ];
+
+        // The top-level aggregate follows the active role filter when one is
+        // set, otherwise it covers every mapped role together.
+        $current = isset($blocks[$role]) ? $blocks[$role] : $this->roleBlock(null, 'Semua role', $filters, $scheduledHours);
 
         return [
-            'summary' => $this->summarize($filters, count($groups), $activeMinutes, $scheduledHours),
-            'per_worker' => $this->aggregateByWorker($groups, $activeMinutes),
+            'summary' => $current['summary'],
+            'per_worker' => $current['per_worker'],
             'hourly' => $this->aggregateByHour($filters),
             'daily' => $this->aggregateByDay($filters),
-            'role' => $filters['role'] ?? null,
-            'transaction_types' => $this->typesForRole($filters['role'] ?? null),
+            'role' => $role,
+            'transaction_types' => $this->typesForRole($role),
+            'blocks' => $blocks,
+        ];
+    }
+
+    /**
+     * One productivity block: every figure scoped to a single role mapping, or
+     * to every mapped role when $role is null.
+     *
+     * Aggregates are pushed into the database and the only per-row pass keeps
+     * two integers per transaction. Hydrating the transactions as Eloquent
+     * models exhausts the 128M PHP memory limit as soon as the period holds
+     * a page-sized batch of rows.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function roleBlock(?string $role, string $label, array $filters, float $scheduledHours): array
+    {
+        $scoped = $role === null ? $filters : [...$filters, 'role' => $role];
+
+        $groups = $this->aggregateGroups($scoped);
+        $activeMinutes = $this->activeMinutesByGroup($scoped, $this->inactivityThresholdMinutes());
+
+        return [
+            'role' => $role,
+            'label' => $label,
+            'transaction_types' => $this->typesForRole($role),
+            'summary' => $this->summarize($scoped, count($groups), $activeMinutes, $scheduledHours),
+            'per_worker' => $this->aggregateByWorker($groups, $activeMinutes),
         ];
     }
 

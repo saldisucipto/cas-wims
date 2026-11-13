@@ -34,12 +34,36 @@
 
                 <div>
                     <label for="rfDevice" class="mb-1 block text-sm font-semibold text-slate-700">RF Device</label>
-                    <select id="rfDevice" class="w-full" data-placeholder="Search RF device...">
-                        <option value=""></option>
-                        @foreach ($devices as $device)
-                            <option value="{{ $device }}">{{ $device }}</option>
-                        @endforeach
-                    </select>
+                    <input id="rfDevice" type="text" readonly value="{{ $assignedDevice?->code ?? '' }}" data-device-status="{{ $assignedDeviceStatus }}" placeholder="Perangkat belum dikenali"
+                        class="w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:outline-hidden">
+
+                    @if (! $assignedDevice)
+                        <p class="mt-1 text-xs text-slate-500">Menunggu sistem mengenali handheld yang digunakan.</p>
+
+                        <form action="{{ route('rf.registration.device') }}" method="POST"
+                            class="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                            @csrf
+                            <label for="rfCode" class="mb-1 block text-xs font-semibold text-amber-800">Kode RF
+                                Handheld</label>
+                            <div class="flex gap-2">
+                                <input id="rfCode" name="rf_code" type="text" autocomplete="off"
+                                    placeholder="Contoh: RF-07" required
+                                    class="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm">
+                                <button type="submit"
+                                    class="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700">
+                                    Kenali Perangkat
+                                </button>
+                            </div>
+                            <p class="mt-1 text-xs text-amber-700">Cukup sekali per handheld â€” perangkat akan
+                                mengingatnya.</p>
+                        </form>
+                    @elseif ($assignedDeviceStatus !== 'available')
+                        <p class="mt-1 text-xs font-semibold text-red-600">Perangkat ini sedang tidak tersedia
+                            ({{ $assignedDevice->status }}). Hubungi leader sebelum memulai sesi.</p>
+                    @else
+                        <p class="mt-1 text-xs text-green-700">Perangkat dikenali otomatis oleh sistem. Kode tidak dapat
+                            diubah.</p>
+                    @endif
                 </div>
             </div>
 
@@ -121,7 +145,7 @@
     <script>
         $(function() {
             const employeeSelect = $('#employee');
-            const deviceSelect = $('#rfDevice');
+            const deviceInput = $('#rfDevice');
             const assignmentCard = $('#rfAssignmentCard');
             const assignedEmployee = $('#assignedEmployee');
             const assignedDevice = $('#assignedDevice');
@@ -195,15 +219,12 @@
                 });
             }
 
-            deviceSelect.select2({
-                placeholder: deviceSelect.data('placeholder'),
-                allowClear: true,
-            });
+            const deviceDetected = deviceInput.data('device-status') === 'available';
 
             function refreshAssignment() {
                 const employeeName = employeeSelect.val();
-                const deviceName = deviceSelect.val();
-                const ready = Boolean(employeeName) && Boolean(deviceName);
+                const deviceName = deviceInput.val();
+                const ready = Boolean(employeeName) && deviceDetected;
 
                 if (!ready) {
                     assignmentCard.addClass('hidden');
@@ -220,19 +241,18 @@
             }
 
             employeeSelect.on('change', refreshAssignment);
-            deviceSelect.on('change', refreshAssignment);
 
             refreshAssignment();
 
-            if (!employeeSelect.length) {
+            if (!employeeSelect.length || !deviceDetected) {
                 startButton.prop('disabled', true);
             }
 
             startButton.on('click', function() {
                 const employeeName = employeeSelect.val();
-                const deviceName = deviceSelect.val();
+                const deviceName = deviceInput.val();
 
-                if (!employeeName || !deviceName) {
+                if (!employeeName || !deviceDetected) {
                     return;
                 }
 
@@ -249,12 +269,10 @@
                 const dashboardUrl = $(this).data('dashboard-url');
                 const query = new URLSearchParams({
                     name: employeeName,
-                    device: deviceName,
                 });
 
                 window.location.href = `${dashboardUrl}?${query.toString()}`;
             });
-
             @if (session('error'))
                 Swal.fire({
                     title: 'Cannot Start Session',

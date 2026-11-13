@@ -134,7 +134,6 @@
 
                     const finishUrl = new URL(@json(route('rf.dashboard')), window.location.origin);
                     finishUrl.searchParams.set('name', @json($employeeName));
-                    finishUrl.searchParams.set('device', @json($deviceName));
                     finishUrl.searchParams.set('finish', '1');
                     window.location.href = finishUrl.toString();
                 });

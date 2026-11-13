@@ -375,6 +375,64 @@ test('per worker rate is derived from the worker own active hours', function () 
         ->and($data['summary']['labor_hours'])->toBe(0.1);
 });
 
+test('picker and packer productivity are reported in separate blocks', function () {
+    seedPackingOperator('CA1OPS008');
+
+    foreach ([
+        ['T1', 'Picking&Packing', 'DOC-A', 10, '2026-08-15 09:00:00'],
+        ['T2', 'Packing', 'DOC-B', 100, '2026-08-15 09:05:00'],
+    ] as [$id, $type, $doc, $qty, $time]) {
+        MesonTransaction::query()->create([
+            'transaction_id' => $id,
+            'transaction_type' => $type,
+            'document_number' => $doc,
+            'transaction_time' => $time,
+            'qty_each_fm' => $qty,
+            'operator_id' => 1,
+            'operator_username' => 'CA1OPS008',
+        ]);
+    }
+
+    $data = app(PackingProductivityService::class)
+        ->dashboard(['start_date' => '2026-08-15', 'end_date' => '2026-08-15']);
+
+    expect($data['blocks'])->toHaveKeys(['picker', 'packer'])
+        ->and($data['blocks']['picker']['transaction_types'])->toBe(['Picking&Packing'])
+        ->and($data['blocks']['picker']['summary']['total_orders'])->toBe(1)
+        ->and($data['blocks']['picker']['summary']['total_items'])->toBe(10.0)
+        ->and($data['blocks']['packer']['transaction_types'])->toBe(['Packing'])
+        ->and($data['blocks']['packer']['summary']['total_orders'])->toBe(1)
+        ->and($data['blocks']['packer']['summary']['total_items'])->toBe(100.0)
+        ->and($data['summary']['total_items'])->toBe(110.0);
+});
+
+test('packing productivity page renders picker and packer as two blocks', function () {
+    $this->actingAs(User::factory()->create(['role' => 'Administrator']));
+    seedPackingOperator('CA1OPS008');
+
+    MesonTransaction::query()->create([
+        'transaction_id' => 'T1',
+        'transaction_type' => 'Picking&Packing',
+        'document_number' => 'DOC-A',
+        'transaction_time' => '2026-08-15 09:00:00',
+        'qty_each_fm' => 1,
+        'operator_id' => 1,
+        'operator_username' => 'CA1OPS008',
+    ]);
+
+    $this->get(route('administration.packing-productivity'))
+        ->assertOk()
+        ->assertSee('Picker Productivity')
+        ->assertSee('Packer Productivity')
+        ->assertSee('Picking&amp;Packing', false)
+        ->assertSee('Belum ada data Packer');
+
+    $this->get(route('administration.packing-productivity', ['role' => 'picker']))
+        ->assertOk()
+        ->assertSee('Picker Productivity')
+        ->assertSee('Packer Productivity');
+});
+
 function buildMesonProductivityWorkbookWithHeaders(array $headers, array $rows): string
 {
     $allRows = [$headers, ...$rows];

@@ -13,10 +13,14 @@ use RuntimeException;
 
 class RfController extends Controller
 {
+    private const DEVICE_SESSION_KEY = 'rf.device_code';
+
     public function __construct(private WorkerProductivityService $workerProductivity) {}
 
-    public function registration()
+    public function registration(Request $request)
     {
+        $device = $this->resolveAssignedDevice($request);
+
         return view('rf.registration', [
             'employees' => DailyWorker::query()
                 ->where('is_active', true)
@@ -25,12 +29,33 @@ class RfController extends Controller
                 })
                 ->orderBy('name')
                 ->get(['name', 'employee_code', 'function', 'position']),
-            'devices' => RfDevice::query()
-                ->where('status', 'Available')
-                ->orderBy('code')
-                ->pluck('code')
-                ->all(),
+            'assignedDevice' => $device,
+            'assignedDeviceStatus' => $this->describeDeviceStatus($device),
         ]);
+    }
+
+    public function assignDevice(Request $request)
+    {
+        $validated = $request->validate([
+            'rf_code' => ['required', 'string', 'max:255'],
+        ]);
+
+        $device = $this->resolveDevice($this->normalizeDeviceCode($validated['rf_code']));
+
+        if (! $device) {
+            return redirect()->route('rf.registration')
+                ->with('error', 'Kode RF Handheld tidak terdaftar pada sistem.');
+        }
+
+        if ($device->status !== 'Available') {
+            return redirect()->route('rf.registration')
+                ->with('error', 'RF Handheld '.$device->code.' sedang tidak tersedia ('.$device->status.').');
+        }
+
+        $request->session()->put(self::DEVICE_SESSION_KEY, $device->code);
+
+        return redirect()->route('rf.registration')
+            ->with('success', 'Perangkat '.$device->code.' berhasil dikenali pada handheld ini.');
     }
 
     public function dashboard(Request $request)
@@ -41,10 +66,10 @@ class RfController extends Controller
             return redirect()->route('rf.registration')->with('error', 'Please select a valid employee first.');
         }
 
-        $device = $this->resolveDevice($request->query('device'));
+        $device = $this->resolveAssignedDevice($request);
 
         if (! $device) {
-            return redirect()->route('rf.registration')->with('error', 'Please select a valid RF Device first.');
+            return redirect()->route('rf.registration')->with('error', 'Perangkat RF Handheld belum dikenali pada handheld ini.');
         }
 
         if ($request->boolean('finish')) {
@@ -73,6 +98,39 @@ class RfController extends Controller
             'sessionStartedAt' => $session->started_at?->toIso8601String(),
             'productivity' => $this->workerProductivity->forSession($session, 'picker'),
         ]);
+    }
+
+    private function resolveAssignedDevice(Request $request): ?RfDevice
+    {
+        $deviceCode = $request->session()->get(self::DEVICE_SESSION_KEY);
+
+        if (! is_string($deviceCode) || $deviceCode === '') {
+            return null;
+        }
+
+        return $this->resolveDevice($deviceCode);
+    }
+
+    private function describeDeviceStatus(?RfDevice $device): string
+    {
+        if (! $device) {
+            return 'unassigned';
+        }
+
+        return $device->status === 'Available' ? 'available' : 'unavailable';
+    }
+
+    private function normalizeDeviceCode(?string $deviceCode): string
+    {
+        $deviceCode = strtoupper(trim((string) $deviceCode));
+
+        if (preg_match('/^RF[\s\-_]*(\d+)$/', $deviceCode, $matches) === 1) {
+            $number = $matches[1];
+
+            return 'RF-'.(strlen($number) > 1 && $number[0] === '0' ? $number : ltrim($number, '0'));
+        }
+
+        return $deviceCode;
     }
 
     private function resolveWorker(?string $workerName): ?DailyWorker

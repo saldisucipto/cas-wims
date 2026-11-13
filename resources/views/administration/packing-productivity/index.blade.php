@@ -9,7 +9,7 @@
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Reports</p>
                     <h1 class="wims-page-title">Packing Productivity</h1>
-                    <p class="wims-page-subtitle">Produktivitas packing per operator dari transaksi Meson.</p>
+                    <p class="wims-page-subtitle">Produktivitas Picker dan Packer per operator dari transaksi Meson.</p>
                     <p class="wims-breadcrumb">Administration / Reports / Packing Productivity</p>
                 </div>
                 <div class="flex gap-2">
@@ -32,50 +32,23 @@
             @endif
 
             @php
-                $roleTypes = $data['transaction_types'] ?? null;
-                $roleLabel = match ($data['role'] ?? null) {
-                    'picker' => 'Picker',
-                    'packer' => 'Packer',
-                    default => 'Semua role',
+                $blocks = $data['blocks'] ?? [];
+                $role = (string) ($filters['role'] ?? '');
+                $roleLabel = isset($blocks[$role]) ? $blocks[$role]['label'] : 'Semua role';
+                $roleLink = function (string $value) use ($filters): string {
+                    $params = array_filter(array_diff_key($filters, ['role' => true]));
+
+                    if ($value !== '') {
+                        $params['role'] = $value;
+                    }
+
+                    return route('administration.packing-productivity', $params);
                 };
+                $roleOptions = ['' => 'Semua', 'picker' => 'Picker', 'packer' => 'Packer'];
             @endphp
 
             <div class="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                <span class="font-semibold">Role:</span> {{ $roleLabel }}
-                &middot; <span class="font-semibold">Transaction type:</span>
-                {{ is_array($roleTypes) && $roleTypes !== [] ? implode(', ', $roleTypes) : 'Packing, Picking&Packing (semua)' }}
-                <span class="block text-xs text-blue-700">
-                    Picker dihitung dari <code>Picking&Packing</code>, Packer dari <code>Packing</code>. Keduanya tidak pernah digabung.
-                </span>
-            </div>
-
-            <div class="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-                <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p class="text-sm text-slate-500">Total Orders</p>
-                    <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['total_orders']) }}</p>
-                </article>
-                <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p class="text-sm text-slate-500">Total SKU Lines</p>
-                    <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['total_lines']) }}</p>
-                </article>
-                <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p class="text-sm text-slate-500">Total Items</p>
-                    <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['total_items']) }}</p>
-                </article>
-                <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p class="text-sm text-slate-500">Total Workers</p>
-                    <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['total_workers']) }}</p>
-                </article>
-                <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p class="text-sm text-slate-500">Avg Orders / Hour</p>
-                    <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['orders_per_hour'], 1) }}</p>
-                    <p class="text-xs text-slate-500">per labour hour</p>
-                </article>
-                <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p class="text-sm text-slate-500">Avg Items / Hour</p>
-                    <p class="mt-1 text-lg font-bold text-slate-900">{{ number_format($data['summary']['items_per_hour'], 1) }}</p>
-                    <p class="text-xs text-slate-500">{{ number_format($data['summary']['labor_hours'], 2) }} labour hours</p>
-                </article>
+                Picker dan Packer ditampilkan sebagai dua blok terpisah: Picker dihitung dari <code>Picking&Packing</code>, Packer dari <code>Packing</code>. Keduanya tidak pernah digabung.
             </div>
 
             <form action="{{ route('administration.packing-productivity') }}" method="GET" class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -117,11 +90,6 @@
                         <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ $status }}</option>
                     @endforeach
                 </select>
-                <select name="role" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                    <option value="">Semua role</option>
-                    <option value="picker" @selected(($filters['role'] ?? '') === 'picker')>Picker (Picking&Packing)</option>
-                    <option value="packer" @selected(($filters['role'] ?? '') === 'packer')>Packer</option>
-                </select>
                 <button class="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white">Apply Filters</button>
             </form>
 
@@ -138,50 +106,96 @@
                 </div>
             @endif
 
-            <div class="mt-6">
-                <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Productivity per Worker</h3>
-                <div class="mt-2 overflow-x-auto">
-                    <table class="wims-table min-w-full text-left text-sm">
-                        <thead>
-                            <tr>
-                                <th>Worker</th><th>Function</th><th>Orders</th><th>SKU Lines</th><th>Items</th>
-                                <th>Orders/Hr</th><th>Items/Hr</th><th>Est. Active Hrs</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse ($data['per_worker'] as $row)
-                                @php
-                                    $workerLink = $row['daily_worker_id']
-                                        ? route('administration.packing-productivity', array_merge(array_filter($filters), ['daily_worker_id' => $row['daily_worker_id']]))
-                                        : route('administration.packing-productivity', array_merge(array_filter($filters), ['operator_id' => $row['operator_id']]));
-                                @endphp
-                                <tr>
-                                    <td>
-                                        <a href="{{ $workerLink }}" class="font-semibold text-blue-700 hover:underline">{{ $row['name'] }}</a>
-                                        @if ($row['username'] && $row['name'] !== $row['username'])
-                                            <div class="text-xs text-slate-500">{{ $row['username'] }}</div>
-                                        @endif
-                                    </td>
-                                    <td>{{ $row['function'] }}</td>
-                                    <td>{{ number_format($row['orders']) }}</td>
-                                    <td>{{ number_format($row['lines']) }}</td>
-                                    <td>{{ number_format($row['items']) }}</td>
-                                    <td>{{ $row['orders_per_hour'] !== null ? number_format($row['orders_per_hour'], 1) : '—' }}</td>
-                                    <td>{{ $row['items_per_hour'] !== null ? number_format($row['items_per_hour'], 1) : '—' }}</td>
-                                    <td>{{ number_format($row['estimated_active_hours'], 2) }}</td>
-                                </tr>
-                            @empty
-                                <tr><td colspan="8"><div class="wims-empty-state">Belum ada data produktivitas. Silakan import data Meson.</div></td></tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
+            <div class="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                @foreach (['picker', 'packer'] as $blockKey)
+                    @php
+                        $block = $blocks[$blockKey] ?? null;
+                        $isPicker = $blockKey === 'picker';
+                    @endphp
+                    @if ($block)
+                        <article class="flex flex-col overflow-hidden rounded-xl border {{ $isPicker ? 'border-blue-200' : 'border-emerald-200' }} bg-white">
+                            <div class="flex flex-wrap items-center justify-between gap-2 {{ $isPicker ? 'bg-blue-50' : 'bg-emerald-50' }} px-4 py-3">
+                                <div>
+                                    <p class="text-sm font-bold {{ $isPicker ? 'text-blue-700' : 'text-emerald-700' }}">{{ $block['label'] }} Productivity</p>
+                                    <p class="text-xs text-slate-600">
+                                        Transaksi: {{ implode(', ', $block['transaction_types'] ?? []) ?: '—' }}
+                                        &middot; {{ number_format($block['summary']['total_workers']) }} worker
+                                        &middot; {{ number_format($block['summary']['labor_hours'], 2) }} labour hours
+                                    </p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Orders / Hour</p>
+                                    <p class="text-lg font-bold {{ $isPicker ? 'text-blue-800' : 'text-emerald-800' }}">{{ number_format($block['summary']['orders_per_hour'], 1) }}</p>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3 border-b {{ $isPicker ? 'border-blue-100' : 'border-emerald-100' }} px-4 py-3 sm:grid-cols-3">
+                                @foreach ([
+                                    'Total Orders' => number_format($block['summary']['total_orders']),
+                                    'SKU Lines' => number_format($block['summary']['total_lines']),
+                                    'Total Items' => number_format($block['summary']['total_items']),
+                                    'Workers' => number_format($block['summary']['total_workers']),
+                                    'Orders / Hr' => number_format($block['summary']['orders_per_hour'], 1),
+                                    'Items / Hr' => number_format($block['summary']['items_per_hour'], 1),
+                                ] as $statLabel => $statValue)
+                                    <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                        <p class="text-[11px] uppercase tracking-wide text-slate-500">{{ $statLabel }}</p>
+                                        <p class="text-base font-bold text-slate-900">{{ $statValue }}</p>
+                                    </div>
+                                @endforeach
+                            </div>
+
+                            <div class="flex-1 overflow-x-auto">
+                                <table class="wims-table min-w-full text-left text-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Worker</th><th>Orders</th><th>SKU Lines</th><th>Items</th>
+                                            <th>Orders/Hr</th><th>Items/Hr</th><th>Active Hrs</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @forelse ($block['per_worker'] as $row)
+                                            @php
+                                                $workerLink = $row['daily_worker_id']
+                                                    ? route('administration.packing-productivity', array_merge(array_filter($filters), ['daily_worker_id' => $row['daily_worker_id']]))
+                                                    : route('administration.packing-productivity', array_merge(array_filter($filters), ['operator_id' => $row['operator_id']]));
+                                            @endphp
+                                            <tr>
+                                                <td>
+                                                    <a href="{{ $workerLink }}" class="font-semibold text-blue-700 hover:underline">{{ $row['name'] }}</a>
+                                                    <div class="text-xs text-slate-500">{{ $row['username'] ?? '-' }} &middot; {{ $row['function'] }}</div>
+                                                </td>
+                                                <td>{{ number_format($row['orders']) }}</td>
+                                                <td>{{ number_format($row['lines']) }}</td>
+                                                <td>{{ number_format($row['items']) }}</td>
+                                                <td>{{ $row['orders_per_hour'] !== null ? number_format($row['orders_per_hour'], 1) : '—' }}</td>
+                                                <td>{{ $row['items_per_hour'] !== null ? number_format($row['items_per_hour'], 1) : '—' }}</td>
+                                                <td>{{ number_format($row['estimated_active_hours'], 2) }}</td>
+                                            </tr>
+                                        @empty
+                                            <tr><td colspan="7"><div class="wims-empty-state">Belum ada data {{ $block['label'] }} pada periode ini.</div></td></tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </article>
+                    @endif
+                @endforeach
             </div>
 
             @php $maxHourItems = collect($data['hourly'])->max('items') ?: 1; @endphp
             <div class="mt-6">
-                <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Hourly Productivity</h3>
-                <p class="text-sm text-slate-600">Jumlah item yang di-packing per jam.</p>
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Hourly Productivity</h3>
+                        <p class="text-sm text-slate-600">Jumlah item yang di-packing per jam &middot; {{ $roleLabel }}.</p>
+                    </div>
+                    <div class="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-0.5 text-xs font-semibold">
+                        @foreach ($roleOptions as $value => $optionLabel)
+                            <a href="{{ $roleLink($value) }}" class="rounded-md px-3 py-1.5 {{ $role === $value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800' }}">{{ $optionLabel }}</a>
+                        @endforeach
+                    </div>
+                </div>
                 <div class="mt-2 rounded-xl border border-slate-200 bg-white p-4">
                     @php $hourlyCount = max(1, count($data['hourly'])); @endphp
                     <div class="grid min-h-45 items-end gap-2 overflow-x-auto pb-2"
@@ -220,7 +234,17 @@
             </div>
 
             <div class="mt-6">
-                <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Daily Productivity</h3>
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <h3 class="text-base font-bold uppercase tracking-wide text-slate-900">Daily Productivity</h3>
+                        <p class="text-sm text-slate-600">Produktivitas harian &middot; {{ $roleLabel }}.</p>
+                    </div>
+                    <div class="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-0.5 text-xs font-semibold">
+                        @foreach ($roleOptions as $value => $optionLabel)
+                            <a href="{{ $roleLink($value) }}" class="rounded-md px-3 py-1.5 {{ $role === $value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800' }}">{{ $optionLabel }}</a>
+                        @endforeach
+                    </div>
+                </div>
                 <div class="mt-2 overflow-x-auto">
                     <table class="wims-table min-w-full text-left text-sm">
                         <thead><tr><th>Date</th><th>Orders</th><th>SKU Lines</th><th>Items</th></tr></thead>

@@ -31,6 +31,7 @@ Route::get('/waiting-leader-validation', [PackingController::class, 'waitingLead
 Route::get('/consumable-request-status', [PackingController::class, 'consumableRequestStatus'])->name('packing.consumable-request-status');
 
 Route::get('/rf-handheld-registration', [RfController::class, 'registration'])->name('rf.registration');
+Route::post('/rf-handheld-registration/device', [RfController::class, 'assignDevice'])->name('rf.registration.device');
 Route::get('/rf-handheld-dashboard', [RfController::class, 'dashboard'])->name('rf.dashboard');
 
 Route::get('/leaderboard-productivity', [LeaderboardController::class, 'index'])->name('leaderboard.productivity');

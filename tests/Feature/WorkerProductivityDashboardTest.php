@@ -261,7 +261,8 @@ test('rf dashboard shows picker productivity', function () {
         'operator_username' => $account->username,
     ]);
 
-    $this->get(route('rf.dashboard', ['name' => $worker->name, 'device' => 'RF-04']))
+    $this->withSession(['rf.device_code' => 'RF-04'])
+        ->get(route('rf.dashboard', ['name' => $worker->name]))
         ->assertOk()
         ->assertSee('Picker Productivity')
         ->assertSee('Picking&amp;Packing', false)
@@ -297,7 +298,8 @@ test('rf dashboard shows the running shift productivity for the worker', functio
         'operator_username' => $account->username,
     ]);
 
-    $this->get(route('rf.dashboard', ['name' => $worker->name, 'device' => 'RF-001']))
+    $this->withSession(['rf.device_code' => 'RF-001'])
+        ->get(route('rf.dashboard', ['name' => $worker->name]))
         ->assertOk()
         ->assertSee('Picker Productivity')
         ->assertSee('AGUS SUKAMTO');
