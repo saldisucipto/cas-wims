@@ -3,6 +3,7 @@
 use App\Models\DailyWorker;
 use App\Models\ManpowerPlanning;
 use App\Models\MesonTransaction;
+use App\Models\ShiftDefinition;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Models\WmsAccount;
@@ -203,16 +204,32 @@ test('picker plan reports no headcount when Meson and the master standard are bo
 });
 
 test('packer plan falls back to the configured standard when Meson has no packing data', function () {
+    // 08:00-13:00 is the wall span the operator types in shift settings; the
+    // productive hours are that span minus the declared break.
+    ShiftDefinition::query()->create([
+        'code' => 'S1',
+        'name' => 'Shift 1 (Morning)',
+        'start_time' => '08:00',
+        'end_time' => '13:00',
+        'break_start' => '10:00',
+        'break_end' => '11:00',
+        'break_minutes' => 60,
+        'effective_hours' => 4,
+        'sort_order' => 1,
+        'active' => true,
+    ]);
+
     SystemSetting::query()->create([
         'setting_key' => 'pp_default_packer_orders_per_hour',
         'setting_value' => '20',
     ]);
 
-    $plan = app(PackerManpowerService::class)->plan(recoPlanningDate(), 100, 5.0);
+    $plan = app(PackerManpowerService::class)->plan(recoPlanningDate(), 100, 8.0);
 
     expect($plan['source'])->toBe('standard')
         ->and($plan['pool_rate'])->toBe(20.0)
-        ->and($plan['capacity_per_person'])->toBe(90.0)
+        ->and($plan['effective_hours'])->toBe(4.0)
+        ->and($plan['capacity_per_person'])->toBe(72.0)
         ->and($plan['headcount'])->toBe(2)
         ->and($plan['note'])->toContain('standar');
 });

@@ -2,9 +2,9 @@
 
 namespace App\Services\ManpowerPlanning;
 
-use App\Models\ManpowerActivity;
-use App\Models\SystemSetting;
 use App\Services\ManpowerPlanning\Concerns\ResolvesMesonBasisDays;
+use App\Services\ManpowerPlanning\Concerns\UsesProductivityStandard;
+use App\Services\ManpowerPlanning\Concerns\UsesStationCapacity;
 use App\Services\PackingProductivity\PackingProductivityService;
 use App\Services\PackingProductivity\WorkerProductivityService;
 use Carbon\Carbon;
@@ -19,6 +19,8 @@ use Carbon\Carbon;
 class PackerManpowerService
 {
     use ResolvesMesonBasisDays;
+    use UsesProductivityStandard;
+    use UsesStationCapacity;
 
     public const ROLE = 'packer';
 
@@ -26,9 +28,16 @@ class PackerManpowerService
 
     public const UNIT_LABEL = 'order/jam';
 
+    /**
+     * Warehouse productivity standard: 24 packed orders per worker per hour.
+     */
+    public const ORDERS_PER_HOUR_STANDARD = 24.0;
+
     private const LABEL = 'Packer';
 
     private const MASTER_ACTIVITY_CODE = 'OB-CHECKPACK';
+
+    private const STATION_DEVICE_TYPE = 'PC';
 
     private const ORDERS_SETTING = 'pp_default_packer_orders_per_hour';
 
@@ -37,6 +46,8 @@ class PackerManpowerService
     private const MIN_ORDERS_FOR_TRUST = 10;
 
     private const MIN_ACTIVE_HOURS_FOR_TRUST = 0.5;
+
+    private const MIN_ACTIVE_HOURS_FOR_RANKING = 1.0;
 
     private const ALLOWANCE = 0.10;
 
@@ -50,8 +61,8 @@ class PackerManpowerService
      */
     public function plan(Carbon $planningDate, int $outboundOrders, float $effectiveHours): array
     {
-        $effectiveHours = max(0.5, $effectiveHours);
         $demand = max(0, $outboundOrders);
+        $standard = $this->productivityStandard(self::ORDERS_SETTING, self::ORDERS_PER_HOUR_STANDARD);
 
         $days = $this->recentActiveDays(
             $this->packing->packerTransactionTypes(),
@@ -66,20 +77,28 @@ class PackerManpowerService
             'label' => self::LABEL,
             'unit' => self::UNIT,
             'unit_label' => self::UNIT_LABEL,
+            'standard_rate' => round($standard, 2),
             'demand' => $demand,
-            'effective_hours' => round($effectiveHours, 2),
+            'effective_hours' => round($this->effectiveHoursForShift(1), 2),
             'allowance' => self::ALLOWANCE,
             'source' => 'none',
             'source_label' => 'Belum ada data',
             'headcount' => null,
+            'standard_headcount' => null,
+            'recommended_shift' => null,
+            'shift_plan' => [],
             'selected' => [],
+            'near_standard' => [],
             'pool_rate' => null,
             'pool_size' => 0,
+            'ranked_pool' => 0,
+            'at_standard' => 0,
             'untracked_pool' => 0,
             'capacity_per_person' => null,
             'capacity_total' => 0.0,
             'coverage' => 0.0,
             'shortfall' => 0,
+            'standard_shortfall' => 0,
             'projected_hours' => null,
             'note' => null,
             'basis' => [
@@ -90,23 +109,122 @@ class PackerManpowerService
                 'is_exact_previous_day' => $days !== []
                     && $days[0] === $planningDate->copy()->subDay()->toDateString(),
             ],
+            'shifts' => $this->shiftDefinitions(),
+        ];
+
+        $schedule = $this->schedule($from, $to, $demand, $standard);
+        $measured = $this->measuredRows($from, $to);
+        $optionalPool = $this->optionalPool($from, $to);
+
+        $result = [
+            ...$result,
+            'effective_hours' => $schedule['hours'],
+            'recommended_shift' => $schedule['shifts'],
+            'shift_plan' => $schedule['plan'],
+            'standard_headcount' => $schedule['standard_headcount'],
         ];
 
         if ($demand === 0) {
             return [
                 ...$result,
                 'headcount' => 0,
+                'standard_headcount' => 0,
                 'note' => 'Tidak ada order pada input, packing tidak perlu tenaga tambahan.',
             ];
         }
 
-        $measured = $this->measuredRows($from, $to);
-
         if ($measured['trusted'] === []) {
-            return $this->withStandardRate($result, $measured['untracked'], $effectiveHours);
+            $plan = $this->withStandardRate($result, $measured['untracked'], $schedule['hours']);
+
+            return [
+                ...$plan,
+                'near_standard' => $this->rankAgainstStandard($optionalPool, $standard),
+                'ranked_pool' => count($optionalPool),
+            ];
         }
 
-        return $this->withMeasuredRate($result, $measured, $effectiveHours);
+        return $this->withMeasuredRate($result, $measured, $optionalPool, $standard, $schedule['hours']);
+    }
+
+    /**
+     * How many shifts the demand needs, and how many people each one carries.
+     *
+     * The standard is per worker per hour, so a single shift can only clear
+     * `standard x effective hours x (1 - allowance)`. Anything above that has
+     * to be spread over a second shift instead of piling everyone into one.
+     *
+     * @return array{shifts: int, hours: float, capacity_per_person: float, payload: int, headcount: int, standard_headcount: int, plan: array<int, array<string, mixed>>}
+     */
+    private function schedule(?Carbon $from, ?Carbon $to, int $demand, float $standard): array
+    {
+        $hours = $this->effectiveHoursForShift(1);
+        $capacityPerPerson = $standard * $this->productiveHoursForShift(1) * (1 - self::ALLOWANCE);
+        $stations = $this->packingStations();
+
+        $oneShift = $this->singleShiftPlan($demand, $capacityPerPerson, $stations, $hours, 1);
+        $twoShift = $this->singleShiftPlan($demand, $capacityPerPerson, $stations, $hours, 2);
+
+        // One shift closes the whole order whenever the crew the standard needs
+        // still fits the stations. Only the overflow escalates; when even the
+        // split does not fit, the one shift scenario is reported so the note can
+        // say the stations themselves are the shortfall.
+        $plan = match (true) {
+            $oneShift['feasible'] => $oneShift,
+            $twoShift['feasible'] => $twoShift,
+            default => $oneShift,
+        };
+
+        return [
+            'shifts' => $plan['shifts'],
+            'hours' => $hours,
+            'capacity_per_person' => $capacityPerPerson,
+            'payload' => $stations,
+            'headcount' => $plan['headcount'],
+            'standard_headcount' => $oneShift['headcount'],
+            'plan' => [
+                $oneShift,
+                $twoShift,
+            ],
+        ];
+    }
+
+    /**
+     * One shift closes the whole demand when the crew needed to hit the standard
+     * still fits the packing stations that are physically ready. Only the
+     * overflow is spread over a second shift.
+     *
+     * @return array{shifts: int, payload: int, orders_per_shift: float, capacity_per_person: float, headcount: int, capacity_total: float, coverage: float, projected_hours: float, feasible: bool, label: string}
+     */
+    private function singleShiftPlan(int $demand, float $capacityPerPerson, int $stations, float $hours, int $shifts = 1): array
+    {
+        $ordersPerShift = $shifts > 0 ? $demand / $shifts : (float) $demand;
+        $headcount = $capacityPerPerson > 0 ? (int) ceil($ordersPerShift / $capacityPerPerson) : 0;
+        $capacityTotal = $headcount * $capacityPerPerson;
+        $fits = $stations <= 0 || $headcount <= $stations;
+
+        return [
+            'shifts' => $shifts,
+            'payload' => $stations,
+            'orders_per_shift' => round($ordersPerShift, 2),
+            'capacity_per_person' => round($capacityPerPerson, 2),
+            'headcount' => $headcount,
+            'capacity_total' => round($capacityTotal, 2),
+            'coverage' => $ordersPerShift > 0 ? round(min(100, $capacityTotal / $ordersPerShift * 100), 1) : 100.0,
+            'projected_hours' => $capacityPerPerson > 0 && $headcount > 0
+                ? round($ordersPerShift / ($capacityPerPerson * $headcount) * $hours, 2)
+                : 0.0,
+            'feasible' => $fits,
+            'label' => $shifts === 1 ? '1 shift' : '2 shift',
+        ];
+    }
+
+    /**
+     * Packing stations physically ready to run, the hard ceiling on how many
+     * packers can work the order at the same time.
+     */
+    private function packingStations(): int
+    {
+        return $this->stationCapacity(self::MASTER_ACTIVITY_CODE, self::STATION_DEVICE_TYPE);
     }
 
     /**
@@ -153,24 +271,105 @@ class PackerManpowerService
     }
 
     /**
+     * Every worker holding at least one productive hour, used only to show how
+     * close each person is to the standard. Volume is not required here: a
+     * worker with a short but clean sample can still sit above the bar.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function optionalPool(?Carbon $from, ?Carbon $to): array
+    {
+        if ($from === null || $to === null) {
+            return [];
+        }
+
+        $rows = [];
+
+        foreach ($this->productivity->performance($from, $to, self::ROLE)['rows'] as $row) {
+            $activeHours = (float) ($row['active_hours'] ?? 0);
+
+            if ($activeHours < self::MIN_ACTIVE_HOURS_FOR_RANKING) {
+                continue;
+            }
+
+            $orders = (int) ($row['orders'] ?? 0);
+
+            $rows[] = [...$row, 'unit_rate' => $orders / $activeHours];
+        }
+
+        return $rows;
+    }
+
+    /**
      * @param  array<string, mixed>  $result
      * @param  array{trusted: array<int, array<string, mixed>>, untracked: int}  $measured
+     * @param  array<int, array<string, mixed>>  $optionalPool
      * @return array<string, mixed>
      */
-    private function withMeasuredRate(array $result, array $measured, float $effectiveHours): array
-    {
-        $rows = $measured['trusted'];
-        $poolRate = $this->median(array_column($rows, 'unit_rate'));
-        $capacityPerPerson = $poolRate * $effectiveHours * (1 - self::ALLOWANCE);
+    private function withMeasuredRate(
+        array $result,
+        array $measured,
+        array $optionalPool,
+        float $standard,
+        float $effectiveHours,
+    ): array {
+        $rows = $this->rankAgainstStandard($measured['trusted'], $standard);
+        $poolRate = $this->median(array_column($measured['trusted'], 'unit_rate'));
+        $capacityPerPerson = $poolRate * $this->productiveHoursForShift(1) * (1 - self::ALLOWANCE);
         $demand = (int) $result['demand'];
         $headcount = $capacityPerPerson > 0 ? (int) ceil($demand / $capacityPerPerson) : null;
+        $standardHeadcount = (int) $result['standard_headcount'];
 
-        usort($rows, fn (array $a, array $b) => $b['unit_rate'] <=> $a['unit_rate']);
+        // Nobody below the standard is picked while a standard-level crew still
+        // covers the demand: the standard is the ceiling on how many people the
+        // shift may use, not a floor.
+        if ($headcount !== null && $standardHeadcount > 0) {
+            $headcount = min($headcount, $standardHeadcount);
+        }
 
+        $selected = $this->allocate($rows, $demand, $headcount, $this->productiveHoursForShift(1));
+
+        $capacityTotal = array_sum(array_column($selected, 'capacity'));
+        $shortfall = (int) ceil(max(0.0, $demand - $capacityTotal));
+        $atStandard = count(array_filter($rows, fn (array $row) => $row['meets_standard'] === true));
+        $standardCapacity = $standard * $this->productiveHoursForShift(1) * (1 - self::ALLOWANCE);
+
+        return [
+            ...$result,
+            'source' => 'measured',
+            'source_label' => 'Produktivitas aktual Meson',
+            'headcount' => $headcount,
+            'selected' => $selected,
+            'near_standard' => $rows,
+            'pool_rate' => round($poolRate, 2),
+            'pool_size' => count($rows),
+            'ranked_pool' => count($rows),
+            'at_standard' => $atStandard,
+            'untracked_pool' => $measured['untracked'],
+            'capacity_per_person' => round($capacityPerPerson, 2),
+            'capacity_total' => round($capacityTotal, 2),
+            'coverage' => $demand > 0 ? round(min(100, $capacityTotal / $demand * 100), 1) : 100.0,
+            'shortfall' => $shortfall,
+            'standard_shortfall' => (int) ceil(max(0.0, $demand - $standardHeadcount * $standardCapacity)),
+            'projected_hours' => $demand > 0 && $capacityTotal > 0
+                ? round($demand / $capacityTotal * $this->productiveHoursForShift(1), 2)
+                : null,
+            'note' => $this->measuredNote($result, $headcount, $selected, $shortfall, $atStandard, $standardHeadcount),
+        ];
+    }
+
+    /**
+     * Take the highest ranked workers until the demand is covered.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function allocate(array $rows, int $demand, ?int $headcount, float $effectiveHours): array
+    {
         $selected = [];
         $allocatedTotal = 0.0;
 
-        foreach (array_slice($rows, 0, min((int) $headcount, count($rows))) as $row) {
+        foreach (array_slice($rows, 0, min((int) $headcount, count($rows))) as $index => $row) {
             $capacity = $row['unit_rate'] * $effectiveHours * (1 - self::ALLOWANCE);
             $allocated = min($capacity, max(0.0, $demand - $allocatedTotal));
             $allocatedTotal += $allocated;
@@ -182,45 +381,47 @@ class PackerManpowerService
                 'function' => $row['function'] ?? '-',
                 'units' => (int) ($row['orders'] ?? 0),
                 'units_per_hour' => round($row['unit_rate'], 2),
+                'orders_per_hour' => round($row['unit_rate'], 2),
                 'active_hours' => round((float) ($row['active_hours'] ?? 0), 2),
                 'days_worked' => (int) ($row['days_worked'] ?? 0),
+                'standard_rate' => $row['standard_rate'],
+                'meets_standard' => $row['meets_standard'],
+                'gap_percent' => $row['gap_percent'],
+                'rank' => $index + 1,
                 'capacity' => round($capacity, 2),
                 'allocated_units' => (int) ceil($allocated),
                 'utilization' => $capacity > 0 ? round($allocated / $capacity * 100, 1) : 0.0,
             ];
         }
 
-        $capacityTotal = array_sum(array_column($selected, 'capacity'));
-        $shortfall = (int) ceil(max(0.0, $demand - $capacityTotal));
-
-        return [
-            ...$result,
-            'source' => 'measured',
-            'source_label' => 'Produktivitas aktual Meson',
-            'headcount' => $headcount,
-            'selected' => $selected,
-            'pool_rate' => round($poolRate, 2),
-            'pool_size' => count($rows),
-            'untracked_pool' => $measured['untracked'],
-            'capacity_per_person' => round($capacityPerPerson, 2),
-            'capacity_total' => round($capacityTotal, 2),
-            'coverage' => $demand > 0 ? round(min(100, $capacityTotal / $demand * 100), 1) : 100.0,
-            'shortfall' => $shortfall,
-            'projected_hours' => $poolRate > 0 && (int) $headcount > 0
-                ? round($demand / ($poolRate * (int) $headcount), 2)
-                : null,
-            'note' => $this->measuredNote($result, $headcount, $selected, $shortfall),
-        ];
+        return $selected;
     }
 
     /**
      * @param  array<string, mixed>  $result
      * @param  array<int, array<string, mixed>>  $selected
      */
-    private function measuredNote(array $result, ?int $headcount, array $selected, int $shortfall): ?string
-    {
+    private function measuredNote(
+        array $result,
+        ?int $headcount,
+        array $selected,
+        int $shortfall,
+        int $atStandard = 0,
+        int $standardHeadcount = 0,
+    ): ?string {
+        $notes = [];
+
+        $stations = (int) ($result['shift_plan'][0]['payload'] ?? 0);
+
+        if ($atStandard === 0) {
+            $notes[] = sprintf(
+                'Belum ada packer yang menyentuh standar %s order/jam. Semua di bawah standar, ambil yang terdekat lebih dulu.',
+                number_format((float) $result['standard_rate'], 2),
+            );
+        }
+
         if ($headcount !== null && $headcount > count($selected)) {
-            return sprintf(
+            $notes[] = sprintf(
                 'Butuh %s packer, hanya %s kandidat terukur yang tersedia. Sisanya harus ditunjuk manual atau diukur ulang.',
                 number_format($headcount),
                 number_format(count($selected)),
@@ -228,14 +429,25 @@ class PackerManpowerService
         }
 
         if ($shortfall > 0) {
-            return sprintf(
-                'Kapasitas kandidat terukur masih kurang %s order dari demand %s order.',
-                number_format($shortfall),
+            $notes[] = sprintf(
+                'Kandidat terukur paling atas baru menutup %s dari %s order pada standar %s packer x %s jam efektif.',
+                number_format(max(0, (int) $result['demand'] - $shortfall)),
                 number_format((int) $result['demand']),
+                number_format($standardHeadcount),
+                number_format((float) $result['effective_hours'], 2),
             );
         }
 
-        return null;
+        if ($standardHeadcount > 0 && $stations > 0 && $standardHeadcount > $stations) {
+            $notes[] = sprintf(
+                'Jika semua orang hanya pas standar %s order/jam, kebutuhan %s packer melebihi %s meja packing yang ready, jadi order dibagi dua shift.',
+                number_format((float) $result['standard_rate'], 2),
+                number_format($standardHeadcount),
+                number_format($stations),
+            );
+        }
+
+        return $notes === [] ? null : implode(' ', $notes);
     }
 
     /**
@@ -267,12 +479,14 @@ class PackerManpowerService
             'source' => 'standard',
             'source_label' => 'Standar master activity',
             'headcount' => $headcount,
+            'standard_headcount' => $headcount,
             'untracked_pool' => $untracked,
             'pool_rate' => round($rate, 2),
             'capacity_per_person' => round($capacityPerPerson, 2),
             'capacity_total' => round($headcount * $capacityPerPerson, 2),
             'coverage' => 100.0,
             'shortfall' => 0,
+            'standard_shortfall' => 0,
             'projected_hours' => $headcount !== null && $headcount > 0
                 ? round($demand / ($rate * $headcount), 2)
                 : null,
@@ -288,28 +502,7 @@ class PackerManpowerService
             return $configured;
         }
 
-        $activity = ManpowerActivity::query()->where('code', self::MASTER_ACTIVITY_CODE)->first();
-
-        if ($activity === null || (float) $activity->productivity_per_hour <= 0) {
-            return null;
-        }
-
-        $rate = (float) $activity->productivity_per_hour;
-        $conversion = (float) $activity->conversion_ratio > 0 ? (float) $activity->conversion_ratio : 1.0;
-
-        // Master activities expressed in pcs/hour are converted to orders/hour.
-        if (str_contains(strtolower((string) $activity->productivity_unit), 'pcs')) {
-            return $rate / $conversion;
-        }
-
-        return $rate;
-    }
-
-    private function settingValue(string $key): ?float
-    {
-        $value = SystemSetting::query()->where('setting_key', $key)->value('setting_value');
-
-        return $value !== null && is_numeric($value) ? (float) $value : null;
+        return $this->masterActivityRate(self::MASTER_ACTIVITY_CODE);
     }
 
     /**

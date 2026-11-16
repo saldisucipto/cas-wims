@@ -64,8 +64,16 @@ class ManpowerPlanningEngine
             $manpowerBottlenecks = $chosenEvaluation['manpowerBottlenecks'];
             $deviceBottlenecks = $chosenEvaluation['deviceBottlenecks'];
         } else {
+            // Divisions pinned to two shifts by their own rule are not the
+            // reason a plan escalated, so they never own the bottleneck list.
             $escalated = array_sum($chosenConfig) > array_sum($configs[0]);
-            $manpowerBottlenecks = $escalated ? $firstEvaluation['manpowerBottlenecks'] : [];
+
+            $manpowerBottlenecks = $escalated
+                ? array_values(array_filter(
+                    $firstEvaluation['manpowerBottlenecks'],
+                    fn (string $name) => ! in_array($name, $this->shiftPinnedActivityNames($byDivision, $minShifts), true),
+                ))
+                : [];
             $deviceBottlenecks = $escalated ? $firstEvaluation['deviceBottlenecks'] : [];
         }
 
@@ -87,6 +95,7 @@ class ManpowerPlanningEngine
             effectiveHours: $input->effectiveHours,
             devices: $chosenEvaluation['devices'],
             recommendedShifts: $chosenEvaluation['recommendedShifts'],
+            capacityShifts: $this->capacityShifts($byDivision, $chosenEvaluation['devices']),
             overallStatus: $chosenEvaluation['overallStatus'],
             manpowerFeasible: $chosenEvaluation['manpowerFeasible'],
             deviceFeasible: $chosenEvaluation['deviceFeasible'],
@@ -138,6 +147,13 @@ class ManpowerPlanningEngine
     }
 
     /**
+     * Least shifts a division can run on.
+     *
+     * A division whose only activities are exclusive to shift 2 still needs two
+     * shifts, but an activity that merely starts later than shift 1 must not
+     * force the whole division to two shifts: that is a shift 1 constraint, not
+     * a headcount problem.
+     *
      * @param  array<int, ActivityResult>  $activities
      */
     private function minimumShift(string $division, array $activities, PlanningInput $input): int
@@ -145,14 +161,23 @@ class ManpowerPlanningEngine
         $rule = $input->divisionRules[$division] ?? ['minimum_shift' => 1, 'reason' => null];
         $ruleMinimum = (int) ($rule['minimum_shift'] ?? 1);
 
+        $shiftTwoOnly = false;
         $windowMinimum = 1;
+
         foreach ($activities as $activity) {
-            if (! in_array(1, $activity->allowedShifts, true)) {
+            if ($activity->allowedShifts === [] || $activity->allowedShifts === [1]) {
+                continue;
+            }
+
+            if ($activity->allowedShifts === [2]) {
+                $shiftTwoOnly = true;
                 $windowMinimum = 2;
+
+                break;
             }
         }
 
-        return max($ruleMinimum, $windowMinimum);
+        return $shiftTwoOnly ? max($ruleMinimum, $windowMinimum) : $ruleMinimum;
     }
 
     /**
@@ -188,7 +213,7 @@ class ManpowerPlanningEngine
         $endTime = $activity['end_time'] ?? '23:00';
 
         $workload = $this->resolveSourceVolume($workloadSource, $input) * $conversionRatio;
-        $capacityPerShift = $productivityPerHour * $input->effectiveHours;
+        $capacityPerShift = $productivityPerHour * $this->hoursForActivity($allowedShifts, $input);
 
         if ($manpowerType === self::MANPOWER_FIXED) {
             $required = (int) ($minimumManpower ?? 0);
@@ -386,6 +411,147 @@ class ManpowerPlanningEngine
             'recommendedShifts' => $feasible ? $maxShift : 0,
             'overallStatus' => $feasible ? 'FEASIBLE' : 'CRITICAL',
         ];
+    }
+
+    /**
+     * Productive hours one shift of this activity really has.
+     *
+     * Shift definitions are the source of truth, so an activity that only runs
+     * on the evening shift is sized against the evening shift's hours, not
+     * against a global setting. Falls back to the flat input when the operator
+     * has not defined shift hours.
+     *
+     * @param  array<int, int>  $allowedShifts
+     */
+    private function hoursForActivity(array $allowedShifts, PlanningInput $input): float
+    {
+        if ($input->shiftHours === []) {
+            return $input->effectiveHours;
+        }
+
+        $hours = $allowedShifts === []
+            ? array_values($input->shiftHours)[0]
+            : ($input->shiftHours[$allowedShifts[0]] ?? $input->effectiveHours);
+
+        return $hours > 0 ? (float) $hours : $input->effectiveHours;
+    }
+
+    /**
+     * How many shifts THIS activity needs, independent of the division rule.
+     *
+     * The division rule says when the division is open (dispatch and handover
+     * only exist on the evening shift). This says whether the workload itself
+     * still fits a single shift, which is what the operator asks when they see
+     * "3.000 order butuh 2 shift?".
+     */
+    private function activityShiftRecommendation(ActivityResult $activity, array $devices): int
+    {
+        if (! $activity->isWorkloadDriven) {
+            return $activity->allowedShifts === [2] ? 2 : 1;
+        }
+
+        if ($activity->requiredOneShift <= 0) {
+            return max(1, min($activity->allowedShifts ?: [1]));
+        }
+
+        $oneShiftFits = $activity->requiredOneShift <= $activity->availableManpower
+            && $this->deviceFits($activity, $activity->requiredOneShift, $devices);
+
+        return $oneShiftFits ? 1 : 2;
+    }
+
+    private function deviceFits(ActivityResult $activity, int $required, array $devices): bool
+    {
+        if ($activity->deviceType === null) {
+            return true;
+        }
+
+        $ready = (int) ($devices[$activity->deviceType] ?? 0);
+
+        return $ready <= 0 || $required <= $ready;
+    }
+
+    /**
+     * Productive hours one person covers in this activity's shift, re-derived
+     * from the workload and headcount already computed for the shift.
+     */
+    private function hoursPerPerson(ActivityResult $activity): ?float
+    {
+        if ($activity->productivityPerHour <= 0 || $activity->requiredOneShift <= 0) {
+            return null;
+        }
+
+        return $activity->workload / ($activity->requiredOneShift * $activity->productivityPerHour);
+    }
+
+    /**
+     * Shift counts driven purely by workload and station capacity, ignoring the
+     * opening hours a division rule imposes.
+     *
+     * @param  array<string, array<int, ActivityResult>>  $byDivision
+     * @param  array<string, DeviceResult>  $deviceResults
+     * @return array<string, array{shifts: int, activities: array<int, array{code: string, name: string, required_one_shift: int, required_per_shift: int, shifts: int}>}>
+     */
+    private function capacityShifts(array $byDivision, array $deviceResults): array
+    {
+        $devices = [];
+
+        foreach ($deviceResults as $type => $result) {
+            $devices[$type] = $result->readyQuantity;
+        }
+
+        $divisions = [];
+
+        foreach ($byDivision as $division => $activities) {
+            $rows = [];
+            $maximum = 1;
+
+            foreach ($activities as $activity) {
+                $shifts = $this->activityShiftRecommendation($activity, $devices);
+                $maximum = max($maximum, $shifts);
+
+                $rows[] = [
+                    'code' => $activity->code,
+                    'name' => $activity->name,
+                    'required_one_shift' => $activity->requiredOneShift,
+                    'required_per_shift' => $activity->requiredTwoShifts,
+                    'device_type' => $activity->deviceType,
+                    'ready_devices' => $activity->deviceType === null ? null : ($devices[$activity->deviceType] ?? 0),
+                    'capacity_per_person' => $activity->productivityPerHour > 0 && $activity->isWorkloadDriven
+                        ? round($activity->productivityPerHour * ($this->hoursPerPerson($activity) ?? 0), 2)
+                        : null,
+                    'shifts' => $shifts,
+                ];
+            }
+
+            $divisions[$division] = ['shifts' => $maximum, 'activities' => $rows];
+        }
+
+        return $divisions;
+    }
+
+    /**
+     * Names of activities living in a division that a rule pins to two shifts.
+     *
+     * @param  array<string, array<int, ActivityResult>>  $byDivision
+     * @param  array<string, int>  $minimums
+     * @return array<int, string>
+     */
+    private function shiftPinnedActivityNames(array $byDivision, array $minimums): array
+    {
+        $names = [];
+
+        foreach ($byDivision as $division => $activities) {
+            if (($minimums[$division] ?? 1) <= 1) {
+                continue;
+            }
+
+            foreach ($activities as $activity) {
+                $names[] = $activity->name;
+            }
+        }
+
+        return $names;
     }
 
     /**

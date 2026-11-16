@@ -8,6 +8,7 @@ use App\Models\ManpowerDivisionRule;
 use App\Models\ManpowerPlanning;
 use App\Models\ManpowerPlanningRecommendation;
 use App\Models\ManpowerVasSchedule;
+use App\Models\ShiftDefinition;
 use App\Models\SystemSetting;
 use App\Services\ManpowerPlanning\ManpowerPlanningEngine;
 use App\Services\ManpowerPlanning\PackerManpowerService;
@@ -45,8 +46,8 @@ class ManpowerPlanningController extends Controller
         $recommendations = null;
 
         if ($request->has('inbound_volume') || $request->has('outbound_volume')) {
-            $result = $this->calculate($inboundVolume, $outboundVolume, $vasVolume, $config['effective_hours']);
-            $recommendations = $this->buildRecommendations($date, $outboundVolume, $config['effective_hours']);
+            $result = $this->calculate($inboundVolume, $outboundVolume, $vasVolume, $config['effective_hours'], $config['shift_hours']);
+            $recommendations = $this->buildRecommendations($date, $outboundVolume, $config['effective_hours'], $config['shift_hours']);
         }
 
         return view('administration.manpower-planning.index', [
@@ -103,7 +104,7 @@ class ManpowerPlanningController extends Controller
         $config = $this->resolveConfig();
         $vasVolume = $this->resolveVasVolume($data['planning_date']);
 
-        $result = $this->calculate((int) $data['inbound_volume'], (int) $data['outbound_volume'], $vasVolume, $config['effective_hours']);
+        $result = $this->calculate((int) $data['inbound_volume'], (int) $data['outbound_volume'], $vasVolume, $config['effective_hours'], $config['shift_hours']);
         $recommendations = $this->buildRecommendations(
             $data['planning_date'],
             (int) $data['outbound_volume'],
@@ -199,7 +200,7 @@ class ManpowerPlanningController extends Controller
         $config = $this->resolveConfig();
         $vasVolume = $this->resolveVasVolume($data['planning_date']);
 
-        $result = $this->calculate((int) $data['inbound_volume'], (int) $data['outbound_volume'], $vasVolume, $config['effective_hours']);
+        $result = $this->calculate((int) $data['inbound_volume'], (int) $data['outbound_volume'], $vasVolume, $config['effective_hours'], $config['shift_hours']);
         $recommendations = $this->buildRecommendations(
             $data['planning_date'],
             (int) $data['outbound_volume'],
@@ -328,6 +329,10 @@ class ManpowerPlanningController extends Controller
                     'orders' => $worker['units'],
                     'days_worked' => $worker['days_worked'],
                     'orders_per_hour' => $worker['units_per_hour'],
+                    'standard_rate' => $recommendations[$role]['standard_rate'] ?? null,
+                    'order_rate' => $worker['orders_per_hour'] ?? $worker['units_per_hour'],
+                    'meets_standard' => $worker['meets_standard'] ?? false,
+                    'gap_percent' => $worker['gap_percent'] ?? null,
                     'capacity' => $worker['capacity'],
                     'allocated_orders' => $worker['allocated_units'],
                     'utilization' => $worker['utilization'],
@@ -552,7 +557,7 @@ class ManpowerPlanningController extends Controller
         return back()->with('success', 'VAS schedule deleted.');
     }
 
-    private function calculate(int $inboundVolume, int $outboundVolume, int $vasVolume, float $effectiveHours): PlanningResult
+    private function calculate(int $inboundVolume, int $outboundVolume, int $vasVolume, float $effectiveHours, array $shiftHours = []): PlanningResult
     {
         $activities = ManpowerActivity::query()
             ->where('is_active', true)
@@ -586,6 +591,7 @@ class ManpowerPlanningController extends Controller
             activities: $activities,
             devices: $this->resolveDevices(),
             divisionRules: $this->resolveDivisionRules(),
+            shiftHours: $shiftHours,
         ));
     }
 
@@ -844,7 +850,12 @@ class ManpowerPlanningController extends Controller
     }
 
     /**
-     * @return array{shift_duration: float, non_productive_hours: float, effective_hours: float}
+     * The manpower engine measures capacity per productive hour, so the hours
+     * come from the shift definitions that the operator maintains in
+     * /administration/system/shift-settings. The legacy scalar settings are
+     * only kept for display and as a fallback when no shift is defined.
+     *
+     * @return array{shift_duration: float, non_productive_hours: float, effective_hours: float, shifts: array<int, array<string, mixed>>, shift_hours: array<int, float>}
      */
     private function resolveConfig(): array
     {
@@ -852,11 +863,76 @@ class ManpowerPlanningController extends Controller
             ->whereIn('setting_key', ['shift_duration', 'non_productive_hours', 'effective_working_hours'])
             ->pluck('setting_value', 'setting_key');
 
+        $shifts = ShiftDefinition::query()
+            ->where('active', true)
+            ->orderBy('sort_order')
+            ->orderBy('code')
+            ->get(['code', 'name', 'start_time', 'end_time', 'break_minutes', 'effective_hours', 'is_short_day'])
+            ->map(function (ShiftDefinition $definition): array {
+                $wallHours = $this->wallHours($definition->start_time, $definition->end_time);
+                $breakHours = max(0, (int) $definition->break_minutes) / 60;
+
+                return [
+                    'code' => $definition->code,
+                    'name' => $definition->name,
+                    'start_time' => $definition->start_time,
+                    'end_time' => $definition->end_time,
+                    'break_minutes' => (int) $definition->break_minutes,
+                    'wall_hours' => $wallHours,
+                    'productive_hours' => round(max(0.0, $wallHours - $breakHours), 2),
+                    'effective_hours' => (float) $definition->effective_hours,
+                    'is_short_day' => (bool) $definition->is_short_day,
+                ];
+            })
+            ->all();
+
+        $regular = array_values(array_filter($shifts, fn (array $shift) => $shift['is_short_day'] === false));
+
+        $shiftHours = [];
+
+        foreach ($regular as $index => $shift) {
+            $shiftHours[$index + 1] = (float) $shift['productive_hours'];
+        }
+
+        $fromShifts = (float) ($shiftHours[1] ?? 0);
+
         return [
             'shift_duration' => (float) ($settings['shift_duration'] ?? 8),
             'non_productive_hours' => (float) ($settings['non_productive_hours'] ?? 0),
-            'effective_hours' => (float) ($settings['effective_working_hours'] ?? 8),
+            'effective_hours' => $fromShifts > 0
+                ? $fromShifts
+                : (float) ($settings['effective_working_hours'] ?? 8),
+            'shifts' => $shifts,
+            'shift_hours' => $shiftHours,
         ];
+    }
+
+    /**
+     * Declared span between two clock times, eight hours when it cannot be read.
+     */
+    private function wallHours(?string $startTime, ?string $endTime): float
+    {
+        $start = $this->minutesOfDay($startTime);
+        $end = $this->minutesOfDay($endTime);
+
+        if ($start === null || $end === null) {
+            return 8.0;
+        }
+
+        if ($end < $start) {
+            $end += 24 * 60;
+        }
+
+        return round(($end - $start) / 60, 2);
+    }
+
+    private function minutesOfDay(?string $time): ?int
+    {
+        if (! is_string($time) || ! preg_match('/^(\d{1,2}):(\d{2})$/', $time, $matches)) {
+            return null;
+        }
+
+        return ((int) $matches[1]) * 60 + (int) $matches[2];
     }
 
     private function resolveVasVolume(string $date): int

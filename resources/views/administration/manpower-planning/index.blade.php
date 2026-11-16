@@ -52,8 +52,17 @@
                 </div>
 
                 <p class="mt-3 text-xs text-slate-500">
-                    Effective Working Hours: <span class="font-semibold text-slate-700">{{ $formatNumber($config['effective_hours']) }} jam / shift</span>
+                    Jam kerja efektif: <span class="font-semibold text-slate-700">{{ $formatNumber($config['effective_hours']) }} jam / shift</span>
+                    @php
+                        $defaultShift = collect($config['shifts'] ?? [])->firstWhere('is_short_day', false);
+                    @endphp
+                    @if ($defaultShift)
+                        ({{ $defaultShift['start_time'] }}&ndash;{{ $defaultShift['end_time'] }} =
+                        {{ $formatNumber($defaultShift['wall_hours']) }} jam,
+                        dikurangi istirahat {{ $formatNumber($defaultShift['break_minutes'] / 60) }} jam)
+                    @endif
                     &middot; VAS volume tanggal ini: <span class="font-semibold text-slate-700">{{ $formatNumber($vasVolume) }} pcs</span>
+                    &middot; <a href="{{ route('administration.system.shift-settings') }}" class="text-blue-700 underline">Ubah di Shift Settings</a>
                     &middot; <a href="{{ route('administration.master.manpower-vas-schedules') }}" class="text-blue-700 underline">Kelola VAS Schedule</a>
                 </p>
             </form>
@@ -70,9 +79,21 @@
 
                 <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                     <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <p class="text-sm text-slate-500">Recommended Shift</p>
+                        <p class="text-sm text-slate-500">Jadwal Shift</p>
                         <p class="mt-1 text-2xl font-bold text-slate-900">
                             {{ $result->recommendedShifts === 0 ? 'Critical' : $result->recommendedShifts.' Shift' }}
+                        </p>
+                        <p class="mt-1 text-[11px] text-slate-500">
+                            Shift operasional yang harus dibuka (Dispatch &amp; Handover hanya ada di shift malam).
+                        </p>
+                    </article>
+                    <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-sm text-slate-500">Kebutuhan Kapasitas</p>
+                        <p class="mt-1 text-2xl font-bold {{ ($result->capacityShifts['Outbound']['shifts'] ?? 1) > 1 ? 'text-amber-600' : 'text-emerald-600' }}">
+                            {{ $result->capacityShifts['Outbound']['shifts'] ?? 1 }} Shift
+                        </p>
+                        <p class="mt-1 text-[11px] text-slate-500">
+                            Outbound masih muat 1 shift bila kapasitas standar dan perangkat siap mencukupi.
                         </p>
                     </article>
                     <article class="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -88,6 +109,127 @@
                         </p>
                     </article>
                 </div>
+
+                @if (! empty($result->capacityShifts))
+                    @php
+                        $packingSummary = collect($result->capacityShifts)
+                            ->flatMap(fn ($division) => $division['activities'])
+                            ->firstWhere('code', 'OB-CHECKPACK');
+                    @endphp
+
+                    @if ($packingSummary)
+                        @php
+                            $packingMpp = (int) $packingSummary['required_one_shift'];
+                            $packingStations = $packingSummary['ready_devices'];
+                            $packingCapacity = $packingSummary['capacity_per_person'];
+                            $packingShort = $packingStations !== null && $packingStations > 0 && $packingMpp > $packingStations;
+                        @endphp
+                        <div class="mt-4 rounded-xl border {{ $packingShort ? 'border-amber-300 bg-amber-50' : 'border-emerald-300 bg-emerald-50' }} p-4">
+                            <p class="text-sm font-semibold {{ $packingShort ? 'text-amber-800' : 'text-emerald-800' }}">
+                                MPP Check-Pack (standar 24 order/jam)
+                            </p>
+                            <div class="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                <div>
+                                    <p class="text-[11px] {{ $packingShort ? 'text-amber-700' : 'text-emerald-700' }}">Kapasitas 1 orang / shift</p>
+                                    <p class="text-lg font-bold {{ $packingShort ? 'text-amber-900' : 'text-emerald-900' }}">
+                                        {{ $formatNumber($packingCapacity) }} order
+                                    </p>
+                                </div>
+                                <div>
+                                    <p class="text-[11px] {{ $packingShort ? 'text-amber-700' : 'text-emerald-700' }}">MPP 1 shift</p>
+                                    <p class="text-lg font-bold {{ $packingShort ? 'text-amber-900' : 'text-emerald-900' }}">
+                                        {{ $formatNumber($packingMpp) }} packer
+                                    </p>
+                                </div>
+                                <div>
+                                    <p class="text-[11px] {{ $packingShort ? 'text-amber-700' : 'text-emerald-700' }}">MPP per shift (2 shift)</p>
+                                    <p class="text-lg font-bold {{ $packingShort ? 'text-amber-900' : 'text-emerald-900' }}">
+                                        {{ $formatNumber($packingSummary['required_per_shift']) }} packer
+                                    </p>
+                                </div>
+                                <div>
+                                    <p class="text-[11px] {{ $packingShort ? 'text-amber-700' : 'text-emerald-700' }}">
+                                        Meja packing ready{{ $packingSummary['device_type'] ? ' ('.$packingSummary['device_type'].')' : '' }}
+                                    </p>
+                                    <p class="text-lg font-bold {{ $packingShort ? 'text-amber-900' : 'text-emerald-900' }}">
+                                        {{ $packingStations !== null ? $formatNumber($packingStations).' meja' : '—' }}
+                                    </p>
+                                </div>
+                            </div>
+                            @if ($packingShort)
+                                <p class="mt-2 text-xs font-semibold text-amber-800">
+                                    {{ $formatNumber($packingMpp) > $packingStations ? 'Tidak muat 1 shift' : 'Muat 1 shift' }}:
+                                    butuh {{ $formatNumber($packingMpp) }} packer sedangkan meja hanya {{ $formatNumber($packingStations) }}.
+                                    Pilihan: pecah ke 2 shift ({{ $formatNumber($packingSummary['required_per_shift']) }} packer per shift)
+                                    atau tambah meja / naikkan standar.
+                                </p>
+                            @else
+                                <p class="mt-2 text-xs font-semibold text-emerald-800">
+                                    Muat 1 shift: {{ $formatNumber($packingMpp) }} packer &le; {{ $formatNumber($packingStations) }} meja ready.
+                                </p>
+                            @endif
+                        </div>
+                    @endif
+
+                    <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-sm font-semibold text-slate-700">Kebutuhan Shift per Aktivitas</p>
+                        <p class="mt-1 text-xs text-slate-500">
+                            Dihitung dari beban kerja dibagi kapasitas standar per orang dan perangkat yang ready,
+                            tanpa terikat jam buka divisi.
+                        </p>
+                        @foreach ($result->capacityShifts as $division => $summary)
+                            <div class="mt-3 overflow-x-auto">
+                                <table class="wims-table min-w-full text-left text-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>{{ $division }}</th>
+                                            <th>Kapasitas/orang</th>
+                                            <th>MPP 1 shift</th>
+                                            <th>MPP per shift (2 shift)</th>
+                                            <th>Device ready</th>
+                                            <th>Shift dibutuhkan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($summary['activities'] as $activity)
+                                            @php
+                                                $overCapacity = $activity['ready_devices'] !== null
+                                                    && $activity['ready_devices'] > 0
+                                                    && $activity['required_one_shift'] > $activity['ready_devices'];
+                                            @endphp
+                                            <tr>
+                                                <td class="font-semibold text-slate-900">{{ $activity['name'] }}</td>
+                                                <td>{{ $activity['capacity_per_person'] !== null ? $formatNumber($activity['capacity_per_person']) : '—' }}</td>
+                                                <td class="{{ $overCapacity ? 'font-bold text-red-600' : '' }}">
+                                                    {{ $formatNumber($activity['required_one_shift']) }}
+                                                </td>
+                                                <td>{{ $formatNumber($activity['required_per_shift']) }}</td>
+                                                <td>
+                                                    @if ($activity['ready_devices'] !== null && $activity['ready_devices'] > 0)
+                                                        <span class="{{ $overCapacity ? 'font-semibold text-red-600' : 'text-slate-600' }}">
+                                                            {{ $formatNumber($activity['ready_devices']) }}
+                                                            @if ($activity['device_type'])
+                                                                {{ $activity['device_type'] }}
+                                                            @endif
+                                                        </span>
+                                                    @else
+                                                        <span class="text-slate-400">—</span>
+                                                    @endif
+                                                </td>
+                                                <td>
+                                                    <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                                                        style="{{ $activity['shifts'] > 1 ? 'background:#fef3c7;color:#92400e' : 'background:#dcfce7;color:#166534' }}">
+                                                        {{ $activity['shifts'] }} shift
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
 
                 @if ($recommendations)
                     @php
@@ -191,10 +333,72 @@
                                         @if ($isPicker && isset($rec['pieces_per_order']))
                                             ({{ $formatNumber($rec['demand_orders']) }} order &times; {{ $formatNumber($rec['pieces_per_order']) }} pcs/order)
                                         @endif
+                                        &middot; Standar:
+                                        <span class="font-semibold text-slate-700">{{ $formatNumber($rec['standard_rate'] ?? 0) }} {{ $rec['standard_unit'] ?? 'order/jam' }}</span>
                                         &middot; Rata-rata kandidat:
                                         <span class="font-semibold text-slate-700">{{ $rec['pool_rate'] !== null ? $formatNumber($rec['pool_rate']).' '.$rec['unit_label'] : '—' }}</span>
                                         &middot; Allowance <span class="font-semibold text-slate-700">{{ $formatNumber($rec['allowance'] * 100) }}%</span>
                                     </p>
+
+                                    <div class="mt-3 grid grid-cols-2 gap-2 px-5 sm:grid-cols-4">
+                                        <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                                            <p class="text-[11px] text-emerald-700">Sudah di atas standar</p>
+                                            <p class="text-lg font-bold text-emerald-700">{{ $rec['at_standard'] ?? 0 }} orang</p>
+                                        </div>
+                                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                            <p class="text-[11px] text-slate-500">Kandidat terukur</p>
+                                            <p class="text-lg font-bold text-slate-900">{{ $rec['ranked_pool'] ?? 0 }} orang</p>
+                                        </div>
+                                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                            <p class="text-[11px] text-slate-500">Kebutuhan jika pas standar</p>
+                                            <p class="text-lg font-bold text-slate-900">{{ $rec['standard_headcount'] ?? '—' }} orang</p>
+                                        </div>
+                                        <div class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                                            <p class="text-[11px] text-blue-700">Rekomendasi shift</p>
+                                            <p class="text-lg font-bold text-blue-700">
+                                                {{ $rec['recommended_shift'] ?? '—' }} shift
+                                                <span class="text-[11px] font-normal text-blue-600">{{ $formatNumber($rec['effective_hours'] ?? 0) }} jam</span>
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    @if (! empty($rec['shift_plan']))
+                                        <div class="mt-3 px-5">
+                                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Perbandingan shift</p>
+                                            <div class="mt-1 overflow-x-auto">
+                                                <table class="wims-table min-w-full text-left text-xs">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Skenario</th>
+                                                            <th>{{ $rec['unit'] }}/shift</th>
+                                                            <th>Kapasitas/orang</th>
+                                                            <th>Kebutuhan orang</th>
+                                                            <th>Status</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach ($rec['shift_plan'] as $scenario)
+                                                            <tr class="{{ $scenario['shifts'] === ($rec['recommended_shift'] ?? null) ? 'bg-emerald-50' : '' }}">
+                                                                <td class="font-semibold">{{ $scenario['label'] }}</td>
+                                                                <td>{{ $formatNumber($scenario['orders_per_shift']) }}</td>
+                                                                <td>{{ $formatNumber($scenario['capacity_per_person']) }}</td>
+                                                                <td class="font-semibold">{{ $scenario['headcount'] }} orang</td>
+                                                                <td>
+                                                                    @if ($scenario['feasible'])
+                                                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background:#dcfce7;color:#166534">MUAT</span>
+                                                                    @else
+                                                                        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background:#fee2e2;color:#991b1b">
+                                                                            TIDAK MUAT{{ $scenario['payload'] > 0 ? ' (maks '.$scenario['payload'].' orang)' : '' }}
+                                                                        </span>
+                                                                    @endif
+                                                                </td>
+                                                            </tr>
+                                                        @endforeach
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    @endif
 
                                     @if (! empty($rec['selected']))
                                         <div class="mt-4 overflow-x-auto border-t border-slate-100">
@@ -204,6 +408,8 @@
                                                         <th>#</th>
                                                         <th>Nama</th>
                                                         <th>{{ $rec['unit_label'] }}</th>
+                                                        <th>Order/jam</th>
+                                                        <th>Vs standar</th>
                                                         <th>Kapasitas/shift</th>
                                                         <th>Alokasi {{ $rec['unit'] }}</th>
                                                         <th>Utilisasi</th>
@@ -221,6 +427,18 @@
                                                                 </div>
                                                             </td>
                                                             <td>{{ $formatNumber($worker['units_per_hour']) }}</td>
+                                                            <td>{{ isset($worker['orders_per_hour']) ? $formatNumber($worker['orders_per_hour']) : '—' }}</td>
+                                                            <td>
+                                                                @if ($worker['meets_standard'] ?? false)
+                                                                    <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background:#dcfce7;color:#166534">
+                                                                        ✓ +{{ $formatNumber($worker['gap_percent'] ?? 0) }}%
+                                                                    </span>
+                                                                @else
+                                                                    <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background:#fef3c7;color:#92400e">
+                                                                        {{ $formatNumber($worker['gap_percent'] ?? 0) }}%
+                                                                    </span>
+                                                                @endif
+                                                            </td>
                                                             <td>{{ $formatNumber($worker['capacity']) }}</td>
                                                             <td class="font-semibold">{{ $formatNumber($worker['allocated_units']) }}</td>
                                                             <td>{{ $formatNumber($worker['utilization']) }}%</td>
@@ -228,6 +446,54 @@
                                                     @endforeach
                                                 </tbody>
                                             </table>
+                                        </div>
+                                    @endif
+
+                                    @if (! empty($rec['near_standard']))
+                                        <div class="border-t border-slate-100">
+                                            <details class="group">
+                                                <summary class="cursor-pointer px-5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                                                    Peringkat menuju standar {{ $formatNumber($rec['standard_rate'] ?? 0) }} {{ $rec['standard_unit'] ?? 'order/jam' }}
+                                                    <span class="font-normal text-slate-500">({{ count($rec['near_standard']) }} orang, terdekat lebih dulu)</span>
+                                                </summary>
+                                                <div class="max-h-80 overflow-y-auto overflow-x-auto">
+                                                    <table class="wims-table min-w-full text-left text-xs">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>#</th>
+                                                                <th>Nama</th>
+                                                                <th>Order/jam</th>
+                                                                <th>Gap</th>
+                                                                <th>Hari data</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach ($rec['near_standard'] as $rank => $candidate)
+                                                                <tr>
+                                                                    <td class="font-semibold text-slate-500">{{ $rank + 1 }}</td>
+                                                                    <td>
+                                                                        <span class="font-semibold text-slate-900">{{ $candidate['name'] }}</span>
+                                                                        <div class="text-[11px] text-slate-500">{{ $candidate['employee_code'] ?? '-' }} &middot; {{ $candidate['function'] ?? '-' }}</div>
+                                                                    </td>
+                                                                    <td class="font-semibold">{{ $formatNumber($candidate['order_rate'] ?? 0) }}</td>
+                                                                    <td>
+                                                                        @if ($candidate['meets_standard'] ?? false)
+                                                                            <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background:#dcfce7;color:#166534">
+                                                                                ✓ +{{ $formatNumber($candidate['gap_percent'] ?? 0) }}%
+                                                                            </span>
+                                                                        @else
+                                                                            <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background:#fee2e2;color:#991b1b">
+                                                                                {{ $formatNumber($candidate['gap_percent'] ?? 0) }}%
+                                                                            </span>
+                                                                        @endif
+                                                                    </td>
+                                                                    <td>{{ $candidate['days_worked'] ?? 0 }}</td>
+                                                                </tr>
+                                                            @endforeach
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </details>
                                         </div>
                                     @endif
 
@@ -253,6 +519,18 @@
                         </div>
 
                         <p class="mt-3 text-xs text-slate-500">
+                            Standar produktivitas: packer {{ $formatNumber($recommendations['packer']['standard_rate'] ?? 0) }} order/jam,
+                            picker {{ $formatNumber($recommendations['picker']['standard_rate'] ?? 0) }} order/jam.
+                            Jam efektif diambil dari Shift Definitions di
+                            <span class="font-semibold">/administration/system/shift-settings</span>
+                            (Shift 1 {{ $formatNumber($recommendations['picker']['effective_hours'] ?? 0) }} jam,
+                            Shift 2 {{ $formatNumber($recommendations['packer']['effective_hours'] ?? 0) }} jam), bukan dari setelan lama.
+                            Jam tersebut sudah dikurangi waktu istirahat: rentang 08:00&ndash;17:00 terhitung 9 jam, dikurangi
+                            1 jam istirahat menjadi 8 jam kerja efektif.
+                            Rekomendasi shift: satu shift dipakai selama jumlah orang masih muat di kapasitas shift;
+                            kalau tidak muat, order dibagi ke dua shift.
+                            Urutan kandidat: yang sudah menyentuh atau melewati standar tampil paling atas (rate tertinggi dulu),
+                            lalu sisanya dari yang paling dekat ke standar.
                             Rate diambil dari hari kerja terakhir yang punya data Meson (maksimal 3 hari), memakai median
                             kandidat terukur, bukan satu pekerja tercepat. Picker diukur dari transaksi
                             <span class="font-semibold">Picking&amp;Packing</span> dalam satuan pcs, packer dari transaksi

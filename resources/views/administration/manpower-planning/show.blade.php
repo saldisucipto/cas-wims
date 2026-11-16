@@ -146,6 +146,7 @@
                                 $unit = $roleKey === 'picker' ? 'pcs' : 'order';
                                 $unitLabel = $roleKey === 'picker' ? 'pcs/jam' : 'order/jam';
                                 $source = $roleKey === 'picker' ? $planning->picker_source : $planning->packer_source;
+                                $standardRate = $workers === [] ? null : $workers[0]->standard_rate;
                                 $accent = $roleKey === 'picker' ? 'border-blue-200' : 'border-emerald-200';
                                 $accentBg = $roleKey === 'picker' ? 'bg-blue-50' : 'bg-emerald-50';
                                 $accentText = $roleKey === 'picker' ? 'text-blue-700' : 'text-emerald-700';
@@ -158,6 +159,9 @@
                                         Rekomendasi:
                                         <span class="font-bold text-slate-900">{{ $headcount ?? '—' }} orang</span>
                                         <span class="text-[11px] text-slate-500">· {{ $source === 'measured' ? 'aktual Meson' : ($source === 'standard' ? 'standar master' : 'belum ada data') }}</span>
+                                        @if ($standardRate)
+                                            <span class="text-[11px] text-slate-500">· standar {{ $formatNumber($standardRate) }} order/jam</span>
+                                        @endif
                                     </p>
                                 </div>
 
@@ -174,6 +178,8 @@
                                                     <th>Nama DW</th>
                                                     <th>Histori</th>
                                                     <th>{{ $unitLabel }}</th>
+                                                    <th>Order/jam</th>
+                                                    <th>Vs standar</th>
                                                     <th>Kapasitas</th>
                                                     <th>Alokasi {{ $unit }}</th>
                                                 </tr>
@@ -193,6 +199,20 @@
                                                             <div class="text-[11px] text-slate-500">{{ $worker->days_worked }} hari data</div>
                                                         </td>
                                                         <td class="font-semibold">{{ $worker->orders_per_hour !== null ? $formatNumber($worker->orders_per_hour) : '—' }}</td>
+                                                        <td>{{ $worker->order_rate !== null ? $formatNumber($worker->order_rate) : '—' }}</td>
+                                                        <td>
+                                                            @if ($worker->gap_percent === null)
+                                                                —
+                                                            @elseif ($worker->meets_standard)
+                                                                <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background:#dcfce7;color:#166534">
+                                                                    ✓ +{{ $formatNumber($worker->gap_percent) }}%
+                                                                </span>
+                                                            @else
+                                                                <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background:#fef3c7;color:#92400e">
+                                                                    {{ $formatNumber($worker->gap_percent) }}%
+                                                                </span>
+                                                            @endif
+                                                        </td>
                                                         <td>{{ $worker->capacity !== null ? $formatNumber($worker->capacity) : '—' }}</td>
                                                         <td class="font-semibold">{{ $formatNumber($worker->allocated_orders) }}</td>
                                                     </tr>

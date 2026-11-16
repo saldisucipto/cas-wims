@@ -415,6 +415,10 @@
                     <strong>{{ $planning->picker_source === 'measured' ? 'produktivitas aktual' : ($planning->picker_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</strong>
                     &middot; Sumber packer:
                     <strong>{{ $planning->packer_source === 'measured' ? 'produktivitas aktual' : ($planning->packer_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</strong>
+                    &middot; Standar: picker
+                    <strong>{{ $formatNumber(optional($recommendationGroups['picker'])->first()?->standard_rate) }} order/jam</strong>,
+                    packer
+                    <strong>{{ $formatNumber(optional($recommendationGroups['packer'])->first()?->standard_rate) }} order/jam</strong>
                 </p>
             @endif
 
@@ -428,6 +432,8 @@
                         <th>Histori Output</th>
                         <th>Hari Data</th>
                         <th>Rate/Jam</th>
+                        <th>Order/Jam</th>
+                        <th>Vs Standar</th>
                         <th>Kapasitas/Shift</th>
                         <th>Alokasi</th>
                     </tr>
@@ -443,13 +449,17 @@
                                 <td class="text-center">{{ $formatNumber($worker->orders) }} {{ $worker->unit }}</td>
                                 <td class="text-center">{{ $worker->days_worked }}</td>
                                 <td class="text-center">{{ $worker->orders_per_hour !== null ? $formatNumber($worker->orders_per_hour).' '.$worker->unit : '-' }}</td>
+                                <td class="text-center">{{ $worker->order_rate !== null ? $formatNumber($worker->order_rate) : '-' }}</td>
+                                <td class="text-center">
+                                    {{ $worker->gap_percent === null ? '-' : (($worker->meets_standard ? '+' : '').$formatNumber($worker->gap_percent).'%') }}
+                                </td>
                                 <td class="text-center">{{ $worker->capacity !== null ? $formatNumber($worker->capacity) : '-' }}</td>
                                 <td class="text-center">{{ $formatNumber($worker->allocated_orders) }}</td>
                             </tr>
                         @endforeach
                     @endforeach
                     <tr class="total-row">
-                        <td class="text-right" colspan="8">
+                        <td class="text-right" colspan="10">
                             Total rekomendasi &mdash;
                             Picker: {{ $planning->picker_headcount ?? 0 }} orang
                             ({{ $formatNumber(collect($recommendationGroups['picker'])->sum('allocated_orders')) }} pcs)

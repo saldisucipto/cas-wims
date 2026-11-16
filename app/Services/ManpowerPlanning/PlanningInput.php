@@ -24,6 +24,7 @@ final readonly class PlanningInput
      * }>  $activities
      * @param  array<string, int>  $devices
      * @param  array<string, array{minimum_shift: int, reason: string|null}>  $divisionRules
+     * @param  array<int, float>  $shiftHours  productive hours per shift number, 1-indexed
      */
     public function __construct(
         public int $inboundVolume,
@@ -33,5 +34,6 @@ final readonly class PlanningInput
         public array $activities,
         public array $devices = [],
         public array $divisionRules = [],
+        public array $shiftHours = [],
     ) {}
 }
