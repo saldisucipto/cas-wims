@@ -105,18 +105,21 @@
                             <div>
                                 <h2 class="text-lg font-semibold text-slate-900">Rekomendasi Tenaga Kerja</h2>
                                 <p class="text-sm text-slate-600">
-                                    Siapa dan berapa picker/packer yang perlu dimasukkan, dihitung dari produktivitas aktual.
+                                    Picker dan packer dihitung terpisah: picker dalam pcs, packer dalam order.
                                 </p>
                             </div>
                             <p class="text-xs text-slate-500">
-                                Basis data Meson (hari sebelumnya):
+                                Basis data Meson:
                                 <span class="font-semibold text-slate-700">
-                                    {{ $recommendations['period']['from']->format('d M Y') }}
+                                    {{ $recommendations['period']['from']?->format('d M Y') ?? '-' }}
+                                    @if ($recommendations['period']['to'] && $recommendations['period']['from'] && ! $recommendations['period']['to']->isSameDay($recommendations['period']['from']))
+                                        &ndash; {{ $recommendations['period']['to']->format('d M Y') }}
+                                    @endif
                                 </span>
                                 @unless ($recommendations['period']['is_exact_previous_day'] ?? true)
                                     <span class="text-amber-700">(tidak ada data H-1, memakai hari terakhir tersedia)</span>
                                 @endunless
-                                &middot; Demand: <span class="font-semibold text-slate-700">{{ $formatNumber($outboundVolume) }} order</span>
+                                &middot; Outbound: <span class="font-semibold text-slate-700">{{ $formatNumber($outboundVolume) }} order</span>
                                 &middot; <span class="font-semibold text-slate-700">{{ $formatNumber($config['effective_hours']) }} jam/shift</span>
                             </p>
                         </div>
@@ -146,7 +149,7 @@
                                     <div class="flex items-start justify-between gap-3 px-5 pt-4">
                                         <div>
                                             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rekomendasi</p>
-                                            <h3 class="text-base font-bold text-slate-900">{{ $rec['label'] }}</h3>
+                                            <h3 class="text-base font-bold text-slate-900">{{ $rec['label'] }} <span class="text-xs font-semibold text-slate-500">({{ $rec['unit'] }})</span></h3>
                                         </div>
                                         <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold"
                                             style="{{ $sourceBadge($rec['source']) }}">
@@ -154,7 +157,7 @@
                                         </span>
                                     </div>
 
-                                    <div class="mt-4 grid grid-cols-3 gap-2 px-5">
+                                    <div class="mt-4 grid grid-cols-2 gap-2 px-5 sm:grid-cols-4">
                                         <div class="rounded-lg border {{ $accent }} {{ $accentBg }} px-3 py-2">
                                             <p class="text-[11px] text-slate-500">Jumlah orang</p>
                                             <p class="text-2xl font-bold {{ $accentText }}">
@@ -162,7 +165,14 @@
                                             </p>
                                         </div>
                                         <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                                            <p class="text-[11px] text-slate-500">Perkiraan selesai</p>
+                                            <p class="text-[11px] text-slate-500">Kapasitas / orang</p>
+                                            <p class="text-lg font-bold text-slate-900">
+                                                {{ $rec['capacity_per_person'] !== null ? $formatNumber($rec['capacity_per_person']) : '—' }}
+                                                <span class="text-[11px] font-normal text-slate-500">{{ $rec['unit'] }}</span>
+                                            </p>
+                                        </div>
+                                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                            <p class="text-[11px] text-slate-500">Selesai dalam</p>
                                             <p class="text-lg font-bold text-slate-900">
                                                 {{ $rec['projected_hours'] !== null ? $formatNumber($rec['projected_hours']).' jam' : '—' }}
                                             </p>
@@ -175,6 +185,17 @@
                                         </div>
                                     </div>
 
+                                    <p class="mt-3 px-5 text-[11px] text-slate-500">
+                                        Demand:
+                                        <span class="font-semibold text-slate-700">{{ $formatNumber($rec['demand']) }} {{ $rec['unit'] }}</span>
+                                        @if ($isPicker && isset($rec['pieces_per_order']))
+                                            ({{ $formatNumber($rec['demand_orders']) }} order &times; {{ $formatNumber($rec['pieces_per_order']) }} pcs/order)
+                                        @endif
+                                        &middot; Rata-rata kandidat:
+                                        <span class="font-semibold text-slate-700">{{ $rec['pool_rate'] !== null ? $formatNumber($rec['pool_rate']).' '.$rec['unit_label'] : '—' }}</span>
+                                        &middot; Allowance <span class="font-semibold text-slate-700">{{ $formatNumber($rec['allowance'] * 100) }}%</span>
+                                    </p>
+
                                     @if (! empty($rec['selected']))
                                         <div class="mt-4 overflow-x-auto border-t border-slate-100">
                                             <table class="wims-table min-w-full text-left text-sm">
@@ -182,9 +203,9 @@
                                                     <tr>
                                                         <th>#</th>
                                                         <th>Nama</th>
-                                                        <th>Order/jam</th>
+                                                        <th>{{ $rec['unit_label'] }}</th>
                                                         <th>Kapasitas/shift</th>
-                                                        <th>Alokasi order</th>
+                                                        <th>Alokasi {{ $rec['unit'] }}</th>
                                                         <th>Utilisasi</th>
                                                     </tr>
                                                 </thead>
@@ -199,9 +220,9 @@
                                                                     &middot; {{ $worker['days_worked'] }} hari data
                                                                 </div>
                                                             </td>
-                                                            <td>{{ $formatNumber($worker['orders_per_hour']) }}</td>
+                                                            <td>{{ $formatNumber($worker['units_per_hour']) }}</td>
                                                             <td>{{ $formatNumber($worker['capacity']) }}</td>
-                                                            <td class="font-semibold">{{ $formatNumber($worker['allocated_orders']) }}</td>
+                                                            <td class="font-semibold">{{ $formatNumber($worker['allocated_units']) }}</td>
                                                             <td>{{ $formatNumber($worker['utilization']) }}%</td>
                                                         </tr>
                                                     @endforeach
@@ -218,13 +239,13 @@
 
                                     <div class="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-5 py-2 text-[11px] text-slate-500">
                                         <span>
-                                            {{ $rec['trusted_pool'] }} kandidat terukur
+                                            {{ $rec['pool_size'] }} kandidat terukur
                                             @if ($rec['untracked_pool'] > 0)
                                                 &middot; {{ $rec['untracked_pool'] }} tanpa data cukup
                                             @endif
                                         </span>
                                         <span>
-                                            {{ $rec['shortfall'] > 0 ? 'Kurang '.$formatNumber($rec['shortfall']).' order' : 'Demand terpenuhi' }}
+                                            {{ $rec['shortfall'] > 0 ? 'Kurang '.$formatNumber($rec['shortfall']).' '.$rec['unit'] : 'Demand terpenuhi' }}
                                         </span>
                                     </div>
                                 </article>
@@ -232,10 +253,12 @@
                         </div>
 
                         <p class="mt-3 text-xs text-slate-500">
-                            Urutan kandidat memakai order/jam tertinggi dari data Meson hari sebelumnya. Satu transaksi
-                            picking (Picking&amp;Packing) dan satu transaksi packing (Packing) masing-masing dihitung satu
-                            order. Kandidat dengan data kurang dari 10 order atau 20 menit kerja tidak dipakai sebagai
-                            dasar saran.
+                            Rate diambil dari hari kerja terakhir yang punya data Meson (maksimal 3 hari), memakai median
+                            kandidat terukur, bukan satu pekerja tercepat. Picker diukur dari transaksi
+                            <span class="font-semibold">Picking&amp;Packing</span> dalam satuan pcs, packer dari transaksi
+                            <span class="font-semibold">Packing</span> dalam satuan order; keduanya tidak digabung. Kapasitas
+                            per orang dikurangi allowance {{ $formatNumber(($recommendations['picker']['allowance'] ?? 0) * 100) }}%
+                            untuk break dan waktu tunggu. Kandidat dengan data kurang dari 10 unit atau 0,5 jam kerja tidak dipakai.
                         </p>
                     </div>
                 @endif

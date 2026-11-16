@@ -10,9 +10,10 @@ use App\Models\ManpowerPlanningRecommendation;
 use App\Models\ManpowerVasSchedule;
 use App\Models\SystemSetting;
 use App\Services\ManpowerPlanning\ManpowerPlanningEngine;
+use App\Services\ManpowerPlanning\PackerManpowerService;
+use App\Services\ManpowerPlanning\PickerManpowerService;
 use App\Services\ManpowerPlanning\PlanningInput;
 use App\Services\ManpowerPlanning\PlanningResult;
-use App\Services\ManpowerPlanning\ProductivityRecommender;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -22,7 +23,10 @@ class ManpowerPlanningController extends Controller
 {
     private const DIVISION_ORDER = ['Inbound', 'Outbound'];
 
-    public function __construct(private ProductivityRecommender $recommender) {}
+    public function __construct(
+        private PickerManpowerService $pickerManpower,
+        private PackerManpowerService $packerManpower,
+    ) {}
 
     public function index(Request $request)
     {
@@ -57,40 +61,35 @@ class ManpowerPlanningController extends Controller
     }
 
     /**
-     * Suggest packers and pickers from measured Meson productivity.
+     * Picking and packing are planned apart.
      *
-     * Both roles are driven by the outbound order volume, because a picking
-     * transaction and a packing transaction each serve one order.
+     * Each role owns its own measurement window, its own unit and its own
+     * headcount; nothing is shared between the two calculations except the
+     * planned outbound order demand that both stations must process.
      *
      * @return array<string, mixed>
      */
     private function buildRecommendations(string $date, int $outboundVolume, float $effectiveHours): array
     {
         $planningDate = Carbon::parse($date);
-        $picker = $this->recommender->performance($planningDate, ProductivityRecommender::ROLE_PICKER);
-        $packer = $this->recommender->performance($planningDate, ProductivityRecommender::ROLE_PACKER);
+
+        $picker = $this->pickerManpower->plan($planningDate, $outboundVolume, $effectiveHours);
+        $packer = $this->packerManpower->plan($planningDate, $outboundVolume, $effectiveHours);
+
+        $starts = array_values(array_filter([$picker['basis']['from'], $packer['basis']['from']]));
+        $ends = array_values(array_filter([$picker['basis']['to'], $packer['basis']['to']]));
 
         return [
+            'picker' => $picker,
+            'packer' => $packer,
             'period' => [
-                'from' => $picker['from'],
-                'to' => $picker['to'],
-                'basis_date' => $picker['basis_date'],
-                'is_exact_previous_day' => $picker['is_exact_previous_day'],
+                'from' => $starts === [] ? null : min($starts),
+                'to' => $ends === [] ? null : max($ends),
+                'is_exact_previous_day' => $picker['basis']['is_exact_previous_day']
+                    && $packer['basis']['is_exact_previous_day'],
             ],
-            'data_until' => $picker['data_until'],
-            'has_measured_data' => $picker['has_data'] || $packer['has_data'],
-            'picker' => $this->recommender->recommend(
-                ProductivityRecommender::ROLE_PICKER,
-                $outboundVolume,
-                $effectiveHours,
-                $picker['rows'],
-            ),
-            'packer' => $this->recommender->recommend(
-                ProductivityRecommender::ROLE_PACKER,
-                $outboundVolume,
-                $effectiveHours,
-                $packer['rows'],
-            ),
+            'data_until' => $picker['basis']['data_until'] ?? $packer['basis']['data_until'],
+            'has_measured_data' => $picker['source'] === 'measured' || $packer['source'] === 'measured',
         ];
     }
 
@@ -300,7 +299,8 @@ class ManpowerPlanningController extends Controller
     }
 
     /**
-     * Flatten the recommendation payload into rows ready for insert.
+     * Flatten the two role plans into rows ready for insert. Picker rows are
+     * stored in pieces and packer rows in orders, each tagged with its unit.
      *
      * @param  array<string, mixed>|null  $recommendations
      * @return array<int, array<string, mixed>>
@@ -314,19 +314,22 @@ class ManpowerPlanningController extends Controller
         $rows = [];
 
         foreach (['picker', 'packer'] as $role) {
+            $unit = $recommendations[$role]['unit'] ?? ($role === 'picker' ? 'pcs' : 'order');
+
             foreach ($recommendations[$role]['selected'] ?? [] as $index => $worker) {
                 $rows[] = [
                     'role' => $role,
+                    'unit' => $unit,
                     'sort_order' => $index + 1,
                     'daily_worker_id' => $worker['daily_worker_id'],
                     'employee_code' => $worker['employee_code'],
                     'name' => $worker['name'],
                     'function' => $worker['function'],
-                    'orders' => $worker['orders'],
+                    'orders' => $worker['units'],
                     'days_worked' => $worker['days_worked'],
-                    'orders_per_hour' => $worker['orders_per_hour'],
+                    'orders_per_hour' => $worker['units_per_hour'],
                     'capacity' => $worker['capacity'],
-                    'allocated_orders' => $worker['allocated_orders'],
+                    'allocated_orders' => $worker['allocated_units'],
                     'utilization' => $worker['utilization'],
                 ];
             }
@@ -610,11 +613,15 @@ class ManpowerPlanningController extends Controller
         ];
 
         if ($recommendations !== null) {
-            $attributes['productivity_period_start'] = $recommendations['period']['from']->toDateString();
-            $attributes['productivity_period_end'] = $recommendations['period']['to']->toDateString();
+            $period = $recommendations['period'];
+
+            $attributes['productivity_period_start'] = $period['from']?->toDateString();
+            $attributes['productivity_period_end'] = $period['to']?->toDateString();
             $attributes['picker_headcount'] = $recommendations['picker']['headcount'];
             $attributes['packer_headcount'] = $recommendations['packer']['headcount'];
-            $attributes['recommendation_source'] = $recommendations['picker']['source'];
+            $attributes['picker_source'] = $recommendations['picker']['source'];
+            $attributes['packer_source'] = $recommendations['packer']['source'];
+            $attributes['recommendation_source'] = $this->overallRecommendationSource($recommendations);
         }
 
         if (! $planning) {
@@ -709,6 +716,23 @@ class ManpowerPlanningController extends Controller
         $planning->devices()->createMany($deviceItems);
 
         return $planning;
+    }
+
+    /**
+     * Roll the two role sources into the single summary column, without hiding
+     * that a role may still be running on the master standard.
+     *
+     * @param  array<string, mixed>  $recommendations
+     */
+    private function overallRecommendationSource(array $recommendations): string
+    {
+        $sources = [$recommendations['picker']['source'], $recommendations['packer']['source']];
+
+        return match (true) {
+            in_array('measured', $sources, true) => 'measured',
+            in_array('standard', $sources, true) => 'standard',
+            default => 'none',
+        };
     }
 
     /**

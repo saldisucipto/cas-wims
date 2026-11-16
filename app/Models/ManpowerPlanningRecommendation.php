@@ -9,6 +9,7 @@ class ManpowerPlanningRecommendation extends Model
     protected $fillable = [
         'manpower_planning_id',
         'role',
+        'unit',
         'sort_order',
         'daily_worker_id',
         'employee_code',

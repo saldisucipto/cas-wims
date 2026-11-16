@@ -408,8 +408,13 @@
                 <p style="margin:-4px 0 8px;font-size:10px;color:#475569;">
                     Basis produktivitas (data hari sebelumnya):
                     <strong>{{ $planning->productivity_period_start->format('d M Y') }}</strong>
-                    &middot; Sumber:
-                    <strong>{{ $planning->recommendation_source === 'measured' ? 'produktivitas aktual' : ($planning->recommendation_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</strong>
+                    @if ($planning->productivity_period_end && ! $planning->productivity_period_end->isSameDay($planning->productivity_period_start))
+                        &ndash; <strong>{{ $planning->productivity_period_end->format('d M Y') }}</strong>
+                    @endif
+                    &middot; Sumber picker:
+                    <strong>{{ $planning->picker_source === 'measured' ? 'produktivitas aktual' : ($planning->picker_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</strong>
+                    &middot; Sumber packer:
+                    <strong>{{ $planning->packer_source === 'measured' ? 'produktivitas aktual' : ($planning->packer_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</strong>
                 </p>
             @endif
 
@@ -420,11 +425,11 @@
                         <th style="text-align:left;">Nama DW</th>
                         <th>Employee Code</th>
                         <th>Role</th>
-                        <th>Histori Order</th>
+                        <th>Histori Output</th>
                         <th>Hari Data</th>
-                        <th>Order/Jam</th>
+                        <th>Rate/Jam</th>
                         <th>Kapasitas/Shift</th>
-                        <th>Alokasi Order</th>
+                        <th>Alokasi</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -434,10 +439,10 @@
                                 <td class="text-center">{{ $index + 1 }}</td>
                                 <td>{{ $worker->name }}</td>
                                 <td class="text-center">{{ $worker->employee_code ?? '-' }}</td>
-                                <td class="text-center">{{ $roleLabel }}</td>
-                                <td class="text-center">{{ $formatNumber($worker->orders) }}</td>
+                                <td class="text-center">{{ $roleLabel }} ({{ $worker->unit }})</td>
+                                <td class="text-center">{{ $formatNumber($worker->orders) }} {{ $worker->unit }}</td>
                                 <td class="text-center">{{ $worker->days_worked }}</td>
-                                <td class="text-center">{{ $worker->orders_per_hour !== null ? $formatNumber($worker->orders_per_hour) : '-' }}</td>
+                                <td class="text-center">{{ $worker->orders_per_hour !== null ? $formatNumber($worker->orders_per_hour).' '.$worker->unit : '-' }}</td>
                                 <td class="text-center">{{ $worker->capacity !== null ? $formatNumber($worker->capacity) : '-' }}</td>
                                 <td class="text-center">{{ $formatNumber($worker->allocated_orders) }}</td>
                             </tr>
@@ -446,11 +451,12 @@
                     <tr class="total-row">
                         <td class="text-right" colspan="8">
                             Total rekomendasi &mdash;
-                            Picker: {{ $planning->picker_headcount ?? 0 }} orang &middot; Packer: {{ $planning->packer_headcount ?? 0 }} orang
+                            Picker: {{ $planning->picker_headcount ?? 0 }} orang
+                            ({{ $formatNumber(collect($recommendationGroups['picker'])->sum('allocated_orders')) }} pcs)
+                            &middot; Packer: {{ $planning->packer_headcount ?? 0 }} orang
+                            ({{ $formatNumber(collect($recommendationGroups['packer'])->sum('allocated_orders')) }} order)
                         </td>
-                        <td class="text-center">
-                            {{ $formatNumber(collect($recommendationGroups['picker'])->sum('allocated_orders') + collect($recommendationGroups['packer'])->sum('allocated_orders')) }}
-                        </td>
+                        <td class="text-center">&mdash;</td>
                     </tr>
                 </tbody>
             </table>

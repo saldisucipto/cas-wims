@@ -143,6 +143,9 @@
                             @php
                                 $workers = $recommendationGroups[$roleKey];
                                 $headcount = $roleKey === 'picker' ? $planning->picker_headcount : $planning->packer_headcount;
+                                $unit = $roleKey === 'picker' ? 'pcs' : 'order';
+                                $unitLabel = $roleKey === 'picker' ? 'pcs/jam' : 'order/jam';
+                                $source = $roleKey === 'picker' ? $planning->picker_source : $planning->packer_source;
                                 $accent = $roleKey === 'picker' ? 'border-blue-200' : 'border-emerald-200';
                                 $accentBg = $roleKey === 'picker' ? 'bg-blue-50' : 'bg-emerald-50';
                                 $accentText = $roleKey === 'picker' ? 'text-blue-700' : 'text-emerald-700';
@@ -150,10 +153,11 @@
 
                             <article class="overflow-hidden rounded-xl border {{ $accent }} bg-white">
                                 <div class="flex items-center justify-between {{ $accentBg }} px-4 py-2.5">
-                                    <p class="text-sm font-bold {{ $accentText }}">{{ $roleLabel }}</p>
+                                    <p class="text-sm font-bold {{ $accentText }}">{{ $roleLabel }} <span class="text-xs font-semibold text-slate-500">({{ $unit }})</span></p>
                                     <p class="text-sm text-slate-600">
                                         Rekomendasi:
                                         <span class="font-bold text-slate-900">{{ $headcount ?? '—' }} orang</span>
+                                        <span class="text-[11px] text-slate-500">· {{ $source === 'measured' ? 'aktual Meson' : ($source === 'standard' ? 'standar master' : 'belum ada data') }}</span>
                                     </p>
                                 </div>
 
@@ -169,9 +173,9 @@
                                                     <th>#</th>
                                                     <th>Nama DW</th>
                                                     <th>Histori</th>
-                                                    <th>Order/jam</th>
+                                                    <th>{{ $unitLabel }}</th>
                                                     <th>Kapasitas</th>
-                                                    <th>Alokasi</th>
+                                                    <th>Alokasi {{ $unit }}</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -185,7 +189,7 @@
                                                             </div>
                                                         </td>
                                                         <td class="text-xs text-slate-600">
-                                                            {{ $formatNumber($worker->orders) }} order
+                                                            {{ $formatNumber($worker->orders) }} {{ $worker->unit }}
                                                             <div class="text-[11px] text-slate-500">{{ $worker->days_worked }} hari data</div>
                                                         </td>
                                                         <td class="font-semibold">{{ $worker->orders_per_hour !== null ? $formatNumber($worker->orders_per_hour) : '—' }}</td>
@@ -202,9 +206,13 @@
                     </div>
 
                     <p class="mt-2 text-xs text-slate-500">
-                        Nama diambil dari pekerja dengan output tertinggi pada data Meson tanggal
-                        {{ $planning->productivity_period_start?->format('d M Y') ?? '-' }}.
-                        Sumber: <span class="font-semibold">{{ $planning->recommendation_source === 'measured' ? 'produktivitas aktual' : ($planning->recommendation_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</span>.
+                        Picker dan packer dihitung terpisah dari transaksi Meson
+                        {{ $planning->productivity_period_start?->format('d M Y') ?? '-' }}
+                        @if ($planning->productivity_period_end && $planning->productivity_period_start && ! $planning->productivity_period_end->isSameDay($planning->productivity_period_start))
+                            &ndash; {{ $planning->productivity_period_end->format('d M Y') }}
+                        @endif.
+                        Sumber picker: <span class="font-semibold">{{ $planning->picker_source === 'measured' ? 'produktivitas aktual' : ($planning->picker_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</span>,
+                        sumber packer: <span class="font-semibold">{{ $planning->packer_source === 'measured' ? 'produktivitas aktual' : ($planning->packer_source === 'standard' ? 'standar master activity' : 'belum ada data') }}</span>.
                     </p>
                 </div>
             @endif

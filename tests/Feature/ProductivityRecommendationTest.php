@@ -7,8 +7,8 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use App\Models\WmsAccount;
 use App\Models\WorkingSession;
-use App\Services\ManpowerPlanning\ProductivityRecommender;
-use App\Services\PackingProductivity\OperationalClock;
+use App\Services\ManpowerPlanning\PackerManpowerService;
+use App\Services\ManpowerPlanning\PickerManpowerService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -34,33 +34,50 @@ function recoWorker(string $name, string $function = 'PICKER'): DailyWorker
     ]);
 }
 
-/**
- * Create a session plus N orders spaced by $stepMinutes.
- */
-function recoSession(DailyWorker $worker, string $username, string $type, int $orders, int $stepMinutes, string $transactionType): WorkingSession
+function recoAccount(string $username): WmsAccount
 {
-    $account = WmsAccount::query()->create([
+    return WmsAccount::query()->create([
         'username' => $username,
         'password' => 'secret',
         'function' => 'WMS',
         'status' => 'Assigned',
     ]);
+}
+
+/**
+ * One shift of transactions inside the given wall-clock day, clocking in at
+ * 08:00 and producing $count documents every $stepMinutes.
+ */
+function recoShift(
+    DailyWorker $worker,
+    string $username,
+    string $sessionType,
+    Carbon\Carbon $wallDay,
+    int $count,
+    int $stepMinutes,
+    float $qtyEach,
+    string $transactionType,
+): WorkingSession {
+    $account = recoAccount($username);
+    $start = $wallDay->copy()->setTime(8, 0);
+    $end = $start->copy()->addMinutes(max(0, ($count - 1) * $stepMinutes));
 
     $session = WorkingSession::query()->create([
         'daily_worker_id' => $worker->id,
         'wms_account_id' => $account->id,
-        'session_type' => $type,
+        'session_type' => $sessionType,
         'status' => 'Working',
-        'started_at' => now()->subHours(6),
+        'started_at' => $start->copy()->subHours(7),
+        'ended_at' => $end->copy()->subHours(7),
     ]);
 
-    for ($i = 0; $i < $orders; $i++) {
+    for ($index = 0; $index < $count; $index++) {
         MesonTransaction::query()->create([
-            'transaction_id' => $username.'-'.$i,
+            'transaction_id' => $username.'-'.$wallDay->toDateString().'-'.$index,
             'transaction_type' => $transactionType,
-            'document_number' => 'DOC-'.$username.'-'.$i,
-            'transaction_time' => OperationalClock::now()->subMinutes(300 - ($i * $stepMinutes)),
-            'qty_each_fm' => 1,
+            'document_number' => 'DOC-'.$username.'-'.$wallDay->toDateString().'-'.$index,
+            'transaction_time' => $start->copy()->addMinutes($index * $stepMinutes),
+            'qty_each_fm' => $qtyEach,
             'operator_id' => $account->id,
             'operator_username' => $username,
         ]);
@@ -69,93 +86,145 @@ function recoSession(DailyWorker $worker, string $username, string $type, int $o
     return $session;
 }
 
-test('recommender ranks workers by measured orders per hour', function () {
+function recoPlanningDate(): Carbon\Carbon
+{
+    return Carbon\Carbon::parse('2026-08-16');
+}
+
+function recoBasisDay(): Carbon\Carbon
+{
+    return Carbon\Carbon::parse('2026-08-15');
+}
+
+test('picker plan measures pieces from picking transactions only', function () {
     $fast = recoWorker('FAST PICKER');
-    recoSession($fast, 'CA1OPS101', 'rf', 11, 5, 'Picking&Packing');
-
+    $middle = recoWorker('MIDDLE PICKER');
     $slow = recoWorker('SLOW PICKER');
-    recoSession($slow, 'CA1OPS102', 'rf', 11, 10, 'Picking&Packing');
 
-    $recommender = app(ProductivityRecommender::class);
-    $performance = $recommender->performance(OperationalClock::today()->addDay(), ProductivityRecommender::ROLE_PICKER);
+    recoShift($fast, 'CA1OPS201', 'rf', recoBasisDay(), 61, 2, 2, 'Picking&Packing');
+    recoShift($middle, 'CA1OPS202', 'rf', recoBasisDay(), 61, 3, 2, 'Picking&Packing');
+    recoShift($slow, 'CA1OPS203', 'rf', recoBasisDay(), 61, 4, 2, 'Picking&Packing');
 
-    $names = array_column($performance['rows'], 'name');
+    $packer = recoWorker('FAST PACKER', 'PACKER');
+    recoShift($packer, 'CA1OPS204', 'packing', recoBasisDay(), 61, 2, 2, 'Packing');
 
-    expect($performance['has_data'])->toBeTrue()
-        ->and($names[0])->toBe('FAST PICKER')
-        ->and($performance['rows'][0]['orders'])->toBe(11)
-        ->and($performance['rows'][0]['trusted'])->toBeTrue();
+    $plan = app(PickerManpowerService::class)->plan(recoPlanningDate(), 100, 8.0);
+
+    expect($plan['unit'])->toBe('pcs')
+        ->and($plan['source'])->toBe('measured')
+        ->and($plan['pieces_per_order'])->toBe(2.0)
+        ->and($plan['demand'])->toBe(200)
+        ->and($plan['pool_size'])->toBe(3)
+        ->and($plan['pool_rate'])->toBeGreaterThan(39.0)
+        ->and($plan['pool_rate'])->toBeLessThan(42.0)
+        ->and($plan['headcount'])->toBe(1)
+        ->and($plan['selected'][0]['name'])->toBe('FAST PICKER')
+        ->and($plan['coverage'])->toBe(100.0)
+        ->and($plan['shortfall'])->toBe(0);
 });
 
-test('recommendation picks only the workers needed to cover the demand', function () {
-    $fast = recoWorker('FAST PICKER');
-    recoSession($fast, 'CA1OPS101', 'rf', 11, 5, 'Picking&Packing');
+test('packer plan is measured in orders and ignores picking transactions', function () {
+    $picker = recoWorker('ONLY PICKER');
+    recoShift($picker, 'CA1OPS211', 'rf', recoBasisDay(), 61, 2, 2, 'Picking&Packing');
 
-    $slow = recoWorker('SLOW PICKER');
-    recoSession($slow, 'CA1OPS102', 'rf', 11, 10, 'Picking&Packing');
+    $first = recoWorker('PACKER ONE', 'PACKER');
+    $second = recoWorker('PACKER TWO', 'PACKER');
+    recoShift($first, 'CA1OPS212', 'packing', recoBasisDay(), 61, 2, 1, 'Packing');
+    recoShift($second, 'CA1OPS213', 'packing', recoBasisDay(), 41, 2, 1, 'Packing');
 
-    $recommender = app(ProductivityRecommender::class);
-    $performance = $recommender->performance(OperationalClock::today()->addDay(), ProductivityRecommender::ROLE_PICKER);
+    $plan = app(PackerManpowerService::class)->plan(recoPlanningDate(), 1000, 8.0);
 
-    $small = $recommender->recommend(ProductivityRecommender::ROLE_PICKER, 20, 2.0, $performance['rows']);
-
-    expect($small['headcount'])->toBe(1)
-        ->and($small['selected'][0]['name'])->toBe('FAST PICKER')
-        ->and($small['coverage'])->toBe(100.0)
-        ->and($small['shortfall'])->toBe(0);
-
-    $big = $recommender->recommend(ProductivityRecommender::ROLE_PICKER, 60, 2.0, $performance['rows']);
-
-    expect($big['headcount'])->toBe(2)
-        ->and(array_column($big['selected'], 'name'))->toBe(['FAST PICKER', 'SLOW PICKER'])
-        ->and($big['shortfall'])->toBeGreaterThan(0)
-        ->and($big['note'])->toContain('order');
+    expect($plan['unit'])->toBe('order')
+        ->and($plan['demand'])->toBe(1000)
+        ->and($plan['pool_size'])->toBe(2)
+        ->and($plan['pool_rate'])->toBeGreaterThan(29.0)
+        ->and($plan['pool_rate'])->toBeLessThan(32.0)
+        ->and($plan['headcount'])->toBeGreaterThan(2)
+        ->and(array_column($plan['selected'], 'name'))->not->toContain('ONLY PICKER')
+        ->and($plan['note'])->toContain('hanya 2 kandidat');
 });
 
-test('recommendation returns zero headcount when there is no demand', function () {
-    $worker = recoWorker('ANY PICKER');
-    recoSession($worker, 'CA1OPS103', 'rf', 11, 5, 'Picking&Packing');
+test('capacity per person applies the non productive allowance', function () {
+    $worker = recoWorker('PICKER ONE');
+    recoShift($worker, 'CA1OPS221', 'rf', recoBasisDay(), 61, 2, 1, 'Picking&Packing');
 
-    $recommender = app(ProductivityRecommender::class);
-    $performance = $recommender->performance(OperationalClock::today()->addDay(), ProductivityRecommender::ROLE_PICKER);
-    $result = $recommender->recommend(ProductivityRecommender::ROLE_PICKER, 0, 7.0, $performance['rows']);
+    $plan = app(PickerManpowerService::class)->plan(recoPlanningDate(), 10, 8.0);
 
-    expect($result['headcount'])->toBe(0)
-        ->and($result['selected'])->toBe([]);
+    expect($plan['allowance'])->toBe(0.10)
+        ->and($plan['pool_rate'])->toBe(30.5)
+        ->and($plan['capacity_per_person'])->toBe(round($plan['pool_rate'] * 8.0 * 0.9, 2))
+        ->and($plan['capacity_per_person'])->toBe(219.6);
 });
 
-test('packer recommendation falls back to the configured standard when Meson has no packing data', function () {
+test('basis averages the three most recent days that hold data', function () {
+    $worker = recoWorker('PICKER TEN');
+    $latest = recoBasisDay()->copy()->subDay();
+
+    foreach ([4, 3, 2, 1] as $daysAgo) {
+        recoShift(
+            $worker,
+            'CA1OPS23'.$daysAgo,
+            'rf',
+            recoBasisDay()->copy()->subDays($daysAgo),
+            31,
+            2,
+            1,
+            'Picking&Packing',
+        );
+    }
+
+    $plan = app(PickerManpowerService::class)->plan(recoPlanningDate(), 50, 8.0);
+
+    expect($plan['basis']['days'])->toHaveCount(3)
+        ->and($plan['basis']['days'][0])->toBe($latest->toDateString())
+        ->and($plan['basis']['days'][2])->toBe($latest->copy()->subDays(2)->toDateString())
+        ->and($plan['basis']['from']->toDateString())->toBe($latest->copy()->subDays(2)->toDateString())
+        ->and($plan['basis']['to']->toDateString())->toBe($latest->toDateString())
+        ->and($plan['basis']['is_exact_previous_day'])->toBeFalse()
+        ->and($plan['pool_rate'])->toBe(31.0);
+});
+
+test('both roles return zero headcount when the input has no orders', function () {
+    $picker = app(PickerManpowerService::class)->plan(recoPlanningDate(), 0, 8.0);
+    $packer = app(PackerManpowerService::class)->plan(recoPlanningDate(), 0, 8.0);
+
+    expect($picker['headcount'])->toBe(0)
+        ->and($picker['demand'])->toBe(0)
+        ->and($packer['headcount'])->toBe(0)
+        ->and($packer['demand'])->toBe(0);
+});
+
+test('picker plan reports no headcount when Meson and the master standard are both empty', function () {
+    $plan = app(PickerManpowerService::class)->plan(recoPlanningDate(), 100, 8.0);
+
+    expect($plan['source'])->toBe('none')
+        ->and($plan['headcount'])->toBeNull()
+        ->and($plan['note'])->toContain('OB-PICKER');
+});
+
+test('packer plan falls back to the configured standard when Meson has no packing data', function () {
     SystemSetting::query()->create([
         'setting_key' => 'pp_default_packer_orders_per_hour',
         'setting_value' => '20',
     ]);
 
-    $recommender = app(ProductivityRecommender::class);
-    $performance = $recommender->performance(OperationalClock::today()->addDay(), ProductivityRecommender::ROLE_PACKER);
+    $plan = app(PackerManpowerService::class)->plan(recoPlanningDate(), 100, 5.0);
 
-    $result = $recommender->recommend(ProductivityRecommender::ROLE_PACKER, 100, 5.0, $performance['rows']);
-
-    expect($performance['has_data'])->toBeFalse()
-        ->and($result['source'])->toBe('standard')
-        ->and($result['headcount'])->toBe(1)
-        ->and($result['note'])->toContain('standar');
+    expect($plan['source'])->toBe('standard')
+        ->and($plan['pool_rate'])->toBe(20.0)
+        ->and($plan['capacity_per_person'])->toBe(90.0)
+        ->and($plan['headcount'])->toBe(2)
+        ->and($plan['note'])->toContain('standar');
 });
 
-test('recommendation stays unknown when neither Meson nor master standard is available', function () {
-    $recommender = app(ProductivityRecommender::class);
-    $performance = $recommender->performance(OperationalClock::today()->addDay(), ProductivityRecommender::ROLE_PACKER);
-    $result = $recommender->recommend(ProductivityRecommender::ROLE_PACKER, 100, 5.0, $performance['rows']);
-
-    expect($result['source'])->toBe('none')
-        ->and($result['headcount'])->toBeNull()
-        ->and($result['note'])->toContain('Belum ada');
-});
-
-test('manpower planning page shows the recommendations after calculating', function () {
+test('manpower planning page shows both role recommendations after calculating', function () {
     $this->actingAs(User::factory()->create(['role' => 'Administrator']));
 
-    $worker = recoWorker('BELA PICKER');
-    recoSession($worker, 'CA1OPS104', 'rf', 11, 5, 'Picking&Packing');
+    $picker = recoWorker('BELA PICKER');
+    recoShift($picker, 'CA1OPS241', 'rf', recoBasisDay(), 11, 5, 1, 'Picking&Packing');
+
+    $packer = recoWorker('BELA PACKER', 'PACKER');
+    recoShift($packer, 'CA1OPS242', 'packing', recoBasisDay(), 11, 5, 1, 'Packing');
 
     $this->get(route('administration.manpower-planning', [
         'inbound_volume' => 0,
@@ -165,42 +234,63 @@ test('manpower planning page shows the recommendations after calculating', funct
         ->assertOk()
         ->assertSee('Rekomendasi Tenaga Kerja')
         ->assertSee('BELA PICKER')
-        ->assertSee('Produktivitas aktual Meson');
+        ->assertSee('BELA PACKER')
+        ->assertSee('Produktivitas aktual Meson')
+        ->assertSee('pcs/jam');
 });
 
-test('saving a planning stores the recommended workers and productivity basis', function () {
+test('manpower planning page renders both roles when Meson has no data at all', function () {
     $this->actingAs(User::factory()->create(['role' => 'Administrator']));
 
-    $worker = recoWorker('BELA PICKER');
-    recoSession($worker, 'CA1OPS105', 'rf', 11, 5, 'Picking&Packing');
+    $this->get(route('administration.manpower-planning', [
+        'inbound_volume' => 0,
+        'outbound_volume' => 250,
+        'date' => '2026-08-16',
+    ]))
+        ->assertOk()
+        ->assertSee('Rekomendasi Tenaga Kerja')
+        ->assertSee('Belum ada data')
+        ->assertSee('Belum ada transaksi picking di Meson')
+        ->assertSee('Belum ada transaksi packing di Meson');
+});
+
+test('saving a planning stores the per role headcount, source and unit', function () {
+    $this->actingAs(User::factory()->create(['role' => 'Administrator']));
+
+    $picker = recoWorker('BELA PICKER');
+    recoShift($picker, 'CA1OPS251', 'rf', recoBasisDay(), 61, 2, 2, 'Picking&Packing');
 
     $this->post(route('administration.manpower-planning.store'), [
         'inbound_volume' => 0,
-        'outbound_volume' => 20,
+        'outbound_volume' => 100,
         'planning_date' => '2026-08-16',
         'status' => 'CALCULATED',
     ])->assertRedirect();
 
     $planning = ManpowerPlanning::query()->latest('id')->firstOrFail();
 
-    expect($planning->picker_headcount)->toBe(1)
+    expect($planning->picker_source)->toBe('measured')
+        ->and($planning->packer_source)->toBe('none')
         ->and($planning->recommendation_source)->toBe('measured')
+        ->and($planning->picker_headcount)->toBe(1)
+        ->and($planning->packer_headcount)->toBeNull()
         ->and($planning->productivity_period_start)->not->toBeNull()
         ->and($planning->productivity_period_end)->not->toBeNull()
         ->and($planning->recommendations)->toHaveCount(1)
-        ->and($planning->recommendations->first()->name)->toBe('BELA PICKER')
-        ->and($planning->recommendations->first()->role)->toBe('picker');
+        ->and($planning->recommendations->first()->role)->toBe('picker')
+        ->and($planning->recommendations->first()->unit)->toBe('pcs')
+        ->and($planning->recommendations->first()->name)->toBe('BELA PICKER');
 });
 
-test('planning show and print render the recommended daily workers', function () {
+test('planning show and print render the recommended daily workers with their unit', function () {
     $this->actingAs(User::factory()->create(['role' => 'Administrator']));
 
-    $worker = recoWorker('BELA PICKER');
-    recoSession($worker, 'CA1OPS106', 'rf', 11, 5, 'Picking&Packing');
+    $picker = recoWorker('BELA PICKER');
+    recoShift($picker, 'CA1OPS261', 'rf', recoBasisDay(), 61, 2, 2, 'Picking&Packing');
 
     $this->post(route('administration.manpower-planning.store'), [
         'inbound_volume' => 0,
-        'outbound_volume' => 20,
+        'outbound_volume' => 100,
         'planning_date' => '2026-08-16',
         'status' => 'CALCULATED',
     ])->assertRedirect();
@@ -212,12 +302,14 @@ test('planning show and print render the recommended daily workers', function ()
         ->assertSee('Rekomendasi Tenaga Kerja')
         ->assertSee('Basis produktivitas (data hari sebelumnya)')
         ->assertSee('BELA PICKER')
-        ->assertSee('Nama DW');
+        ->assertSee('Nama DW')
+        ->assertSee('pcs/jam');
 
     $this->get(route('administration.manpower-planning.print', $planning))
         ->assertOk()
         ->assertSee('Rekomendasi Tenaga Kerja (Daily Worker)')
         ->assertSee('Employee Code')
         ->assertSee('BELA PICKER')
+        ->assertSee('Picker (pcs)')
         ->assertSee('Basis produktivitas (data hari sebelumnya)');
 });

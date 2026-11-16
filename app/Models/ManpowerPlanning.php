@@ -20,6 +20,8 @@ class ManpowerPlanning extends Model
         'picker_headcount',
         'packer_headcount',
         'recommendation_source',
+        'picker_source',
+        'packer_source',
         'shift_duration',
         'non_productive_hours',
         'effective_working_hours',
