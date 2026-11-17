@@ -9,7 +9,7 @@
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Reports</p>
                     <h1 class="wims-page-title">Working Session Report</h1>
-                    <p class="wims-page-subtitle">Track all active and completed working sessions by worker and device usage.
+                    <p class="wims-page-subtitle">Ringkasan sesi kerja manpower: pemakaian RF dan pemakaian Packing / Station.
                     </p>
                     <p class="wims-breadcrumb">Administration / Reports / Working Session Report</p>
                 </div>
@@ -45,11 +45,83 @@
                 </article>
             </div>
 
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <article class="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <p class="text-sm font-semibold text-blue-700">MP pakai RF</p>
+                            <p class="text-xs text-blue-600">Sesi tipe RF / picking.</p>
+                        </div>
+                        <span
+                            class="inline-flex rounded-full border border-blue-300 bg-white px-2 py-0.5 text-xs font-semibold text-blue-700">RF</span>
+                    </div>
+                    <div class="mt-3 grid grid-cols-3 gap-2">
+                        <div>
+                            <p class="text-xs text-blue-600">MP</p>
+                            <p class="mt-0.5 text-xl font-bold text-blue-800">{{ $summary['rf']['total_workers'] }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-blue-600">Sesi</p>
+                            <p class="mt-0.5 text-xl font-bold text-blue-800">{{ $summary['rf']['total_sessions'] }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-blue-600">Jam</p>
+                            <p class="mt-0.5 text-xl font-bold text-blue-800">{{ $summary['rf']['total_hours'] }}</p>
+                        </div>
+                    </div>
+                    <a href="{{ route('administration.reports.working-sessions', array_filter([
+                        'period' => $filter['period'] ?? 'this_month',
+                        'start_date' => $filter['start_date'] ?? null,
+                        'end_date' => $filter['end_date'] ?? null,
+                        'worker_name' => $workerName ?? null,
+                        'type' => 'rf',
+                    ])) }}"
+                        class="mt-3 inline-flex items-center text-xs font-semibold text-blue-700 hover:text-blue-900 hover:underline">Lihat
+                        detail RF</a>
+                </article>
+                <article class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <p class="text-sm font-semibold text-emerald-700">MP pakai Packing / Station</p>
+                            <p class="text-xs text-emerald-600">Sesi tipe packing.</p>
+                        </div>
+                        <span
+                            class="inline-flex rounded-full border border-emerald-300 bg-white px-2 py-0.5 text-xs font-semibold text-emerald-700">Packing</span>
+                    </div>
+                    <div class="mt-3 grid grid-cols-3 gap-2">
+                        <div>
+                            <p class="text-xs text-emerald-600">MP</p>
+                            <p class="mt-0.5 text-xl font-bold text-emerald-800">{{ $summary['packing']['total_workers'] }}
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-emerald-600">Sesi</p>
+                            <p class="mt-0.5 text-xl font-bold text-emerald-800">
+                                {{ $summary['packing']['total_sessions'] }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-emerald-600">Jam</p>
+                            <p class="mt-0.5 text-xl font-bold text-emerald-800">{{ $summary['packing']['total_hours'] }}
+                            </p>
+                        </div>
+                    </div>
+                    <a href="{{ route('administration.reports.working-sessions', array_filter([
+                        'period' => $filter['period'] ?? 'this_month',
+                        'start_date' => $filter['start_date'] ?? null,
+                        'end_date' => $filter['end_date'] ?? null,
+                        'worker_name' => $workerName ?? null,
+                        'type' => 'packing',
+                    ])) }}"
+                        class="mt-3 inline-flex items-center text-xs font-semibold text-emerald-700 hover:text-emerald-900 hover:underline">Lihat
+                        detail Packing</a>
+                </article>
+            </div>
+
             <x-report-date-filter :action="route('administration.reports.working-sessions')" :filter="$filter" />
 
             <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <form action="{{ route('administration.reports.working-sessions') }}" method="GET"
-                    class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_220px_auto] sm:items-end">
                     <input type="hidden" name="period" value="{{ $filter['period'] ?? 'today' }}">
                     <input type="hidden" name="start_date" value="{{ $filter['start_date'] ?? '' }}">
                     <input type="hidden" name="end_date" value="{{ $filter['end_date'] ?? '' }}">
@@ -59,10 +131,18 @@
                             placeholder="Contoh: Budi"
                             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
                     </div>
+                    <div>
+                        <label for="type" class="mb-1 block text-sm font-semibold text-slate-700">Tipe Sesi</label>
+                        <select id="type" name="type" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                            @foreach ($typeOptions as $value => $label)
+                                <option value="{{ $value }}" @selected(($type ?? 'all') === $value)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                     <div class="flex gap-2">
                         <button type="submit" class="wims-btn wims-btn-primary">Cari</button>
                         <a href="{{ route('administration.reports.working-sessions', ['period' => $filter['period'] ?? 'today', 'start_date' => $filter['start_date'] ?? null, 'end_date' => $filter['end_date'] ?? null]) }}"
-                            class="inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Reset Nama</a>
+                            class="inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Reset</a>
                     </div>
                 </form>
             </div>
@@ -70,6 +150,48 @@
             <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p class="text-sm font-semibold text-slate-700">Periode Laporan</p>
                 <p class="mt-1 text-sm text-slate-600">{{ $filter['label'] }}</p>
+            </div>
+
+            <div class="mt-6 overflow-x-auto">
+                <h2 class="mb-2 text-base font-bold uppercase tracking-wide text-slate-900">Rekap Pemakaian MP per Tipe</h2>
+                <table class="wims-table min-w-full text-left text-sm">
+                    <thead>
+                        <tr>
+                            <th>Tipe Sesi</th>
+                            <th>MP Terpakai</th>
+                            <th>Total Sesi</th>
+                            <th>Total Jam Kerja</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>
+                                <span
+                                    class="inline-flex rounded-full border border-blue-300 bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">RF</span>
+                            </td>
+                            <td>{{ $summary['rf']['total_workers'] }}</td>
+                            <td>{{ $summary['rf']['total_sessions'] }}</td>
+                            <td>{{ $summary['rf']['total_hours'] }}</td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <span
+                                    class="inline-flex rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Packing / Station</span>
+                            </td>
+                            <td>{{ $summary['packing']['total_workers'] }}</td>
+                            <td>{{ $summary['packing']['total_sessions'] }}</td>
+                            <td>{{ $summary['packing']['total_hours'] }}</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-t border-slate-300 font-semibold">
+                            <td>Total</td>
+                            <td>{{ $summary['total_workers'] }}</td>
+                            <td>{{ $summary['total_sessions'] }}</td>
+                            <td>{{ $summary['total_hours'] }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
             </div>
 
             <div class="mt-6 overflow-x-auto">
@@ -92,7 +214,18 @@
                             <tr>
                                 <td>{{ $row->started_at?->timezone('Asia/Jakarta')->format('d M Y H:i') }}</td>
                                 <td>{{ $row->dailyWorker?->name ?? '-' }}</td>
-                                <td>{{ ucfirst($row->session_type) }}</td>
+                                <td>
+                                    @if ($row->session_type === 'rf')
+                                        <span
+                                            class="inline-flex rounded-full border border-blue-300 bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">RF</span>
+                                    @elseif ($row->session_type === 'packing')
+                                        <span
+                                            class="inline-flex rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Packing</span>
+                                    @else
+                                        <span
+                                            class="inline-flex rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">{{ ucfirst((string) $row->session_type) }}</span>
+                                    @endif
+                                </td>
                                 <td>{{ $row->packingStation?->name ?? '-' }}</td>
                                 <td>{{ $row->rfDevice?->code ?? '-' }}</td>
                                 <td>{{ $row->wmsAccount?->username ?? '-' }}</td>

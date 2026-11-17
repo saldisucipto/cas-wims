@@ -20,6 +20,24 @@ use RuntimeException;
 
 class ReportController extends Controller
 {
+    /**
+     * @var array<string, string|null>
+     */
+    private const SESSION_TYPE_OPTIONS = [
+        'all' => null,
+        'rf' => 'rf',
+        'packing' => 'packing',
+    ];
+
+    /**
+     * @var array<string, string>
+     */
+    private const SESSION_TYPE_LABELS = [
+        'all' => 'Semua Tipe',
+        'rf' => 'RF (Picking)',
+        'packing' => 'Packing / Station',
+    ];
+
     public function workingSessions(Request $request)
     {
         if ($redirect = $this->ensureAdminOrLeader()) {
@@ -31,14 +49,26 @@ class ReportController extends Controller
         $filter = $this->resolveDateFilter($request);
         $workerName = trim($request->string('worker_name')->toString());
 
+        $typeKey = $request->string('type')->toString();
+        $typeKey = array_key_exists($typeKey, self::SESSION_TYPE_OPTIONS) ? $typeKey : 'all';
+        $sessionType = self::SESSION_TYPE_OPTIONS[$typeKey];
+
+        $applyFilters = function ($builder) use ($workerName, $sessionType) {
+            return $builder
+                ->when($sessionType !== null, function ($typeQuery) use ($sessionType) {
+                    $typeQuery->where('session_type', $sessionType);
+                })
+                ->when($workerName !== '', function ($builder) use ($workerName) {
+                    $builder->whereHas('dailyWorker', function ($workerQuery) use ($workerName) {
+                        $workerQuery->whereRaw('LOWER(name) like ?', ['%'.strtolower($workerName).'%']);
+                    });
+                });
+        };
+
         $query = WorkingSession::query()
             ->with(['dailyWorker', 'packingStation', 'rfDevice', 'wmsAccount'])
             ->whereBetween('started_at', [$filter['start'], $filter['end']])
-            ->when($workerName !== '', function ($builder) use ($workerName) {
-                $builder->whereHas('dailyWorker', function ($workerQuery) use ($workerName) {
-                    $workerQuery->whereRaw('LOWER(name) like ?', ['%'.strtolower($workerName).'%']);
-                });
-            })
+            ->tap($applyFilters)
             ->latest('started_at');
 
         $rows = $query->paginate(15)->withQueryString();
@@ -46,14 +76,75 @@ class ReportController extends Controller
         $allFilteredRows = WorkingSession::query()
             ->with('dailyWorker')
             ->whereBetween('started_at', [$filter['start'], $filter['end']])
-            ->when($workerName !== '', function ($builder) use ($workerName) {
-                $builder->whereHas('dailyWorker', function ($workerQuery) use ($workerName) {
-                    $workerQuery->whereRaw('LOWER(name) like ?', ['%'.strtolower($workerName).'%']);
-                });
-            })
+            ->tap($applyFilters)
             ->get();
 
-        $totalMinutes = $allFilteredRows->sum(function (WorkingSession $session) {
+        $distinctWorkers = $this->countDistinctOperators($allFilteredRows);
+
+        $rfSessions = $allFilteredRows
+            ->filter(fn (WorkingSession $session) => $session->session_type === 'rf')
+            ->values();
+
+        $packingSessions = $allFilteredRows
+            ->filter(fn (WorkingSession $session) => $session->session_type === 'packing')
+            ->values();
+
+        $summary = [
+            'total_sessions' => $allFilteredRows->count(),
+            'total_workers' => $distinctWorkers,
+            'total_hours' => $this->sumSessionHours($allFilteredRows),
+            'rf' => [
+                'total_sessions' => $rfSessions->count(),
+                'total_workers' => $this->countDistinctOperators($rfSessions),
+                'total_hours' => $this->sumSessionHours($rfSessions),
+            ],
+            'packing' => [
+                'total_sessions' => $packingSessions->count(),
+                'total_workers' => $this->countDistinctOperators($packingSessions),
+                'total_hours' => $this->sumSessionHours($packingSessions),
+            ],
+        ];
+
+        return view('administration.reports.working-sessions', [
+            'rows' => $rows,
+            'filter' => $filter,
+            'workerName' => $workerName,
+            'type' => $typeKey,
+            'typeOptions' => self::SESSION_TYPE_LABELS,
+            'canForceClose' => in_array(Auth::user()?->role, ['Administrator', 'Leader'], true),
+            'backRoute' => Auth::user()?->role === 'Leader' ? route('leader.panel') : route('administration.dashboard'),
+            'summary' => $summary,
+        ]);
+    }
+
+    /**
+     * @param  Collection<int, WorkingSession>  $sessions
+     */
+    private function countDistinctOperators(Collection $sessions): int
+    {
+        return $sessions
+            ->map(function (WorkingSession $session) {
+                if ($session->daily_worker_id) {
+                    return 'worker:'.$session->daily_worker_id;
+                }
+
+                if ($session->wms_account_id) {
+                    return 'operator:'.$session->wms_account_id;
+                }
+
+                return null;
+            })
+            ->filter()
+            ->unique()
+            ->count();
+    }
+
+    /**
+     * @param  Collection<int, WorkingSession>  $sessions
+     */
+    private function sumSessionHours(Collection $sessions): float
+    {
+        $minutes = $sessions->sum(function (WorkingSession $session) {
             if (! $session->ended_at || ! $session->started_at) {
                 return 0;
             }
@@ -61,18 +152,7 @@ class ReportController extends Controller
             return max(0, $session->started_at->diffInMinutes($session->ended_at));
         });
 
-        return view('administration.reports.working-sessions', [
-            'rows' => $rows,
-            'filter' => $filter,
-            'workerName' => $workerName,
-            'canForceClose' => in_array(Auth::user()?->role, ['Administrator', 'Leader'], true),
-            'backRoute' => Auth::user()?->role === 'Leader' ? route('leader.panel') : route('administration.dashboard'),
-            'summary' => [
-                'total_sessions' => $allFilteredRows->count(),
-                'total_workers' => $allFilteredRows->pluck('daily_worker_id')->unique()->count(),
-                'total_hours' => round($totalMinutes / 60, 2),
-            ],
-        ]);
+        return round($minutes / 60, 2);
     }
 
     public function forceCloseWorkingSession(Request $request, WorkingSession $workingSession)
